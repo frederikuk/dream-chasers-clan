@@ -62,6 +62,12 @@ public class DreamChasersPanelTest
 		}
 
 		@Override
+		public void collapsedChanged(String keys)
+		{
+			log.add("collapsed " + keys);
+		}
+
+		@Override
 		public void link(String code)
 		{
 			log.add("link " + code);
@@ -436,6 +442,71 @@ public class DreamChasersPanelTest
 		click(panel, "Cancel");
 		assertEquals("verifyCancel", calls.log.get(calls.log.size() - 1));
 		assertTrue(allText(panel).contains("Cancelled. Nothing was linked."));
+	}
+
+	@Test
+	public void enableEverythingBeforeConnectingSaysWhy() throws Exception
+	{
+		DreamChasersPanel panel = newPanel(new Calls());
+		panel.setEnableAllRefused(true);
+		flush();
+		assertTrue(allText(panel).contains("<b>Enable everything</b> needs you connected first, so it turned itself off. Press Connect, then close and reopen the settings and tick it again."));
+		panel.setSignedInAs("Tadeko");
+		panel.setSignedInAs(null);
+		flush();
+		assertFalse("signing in clears it", allText(panel).contains("needs you connected first"));
+	}
+
+	@Test
+	public void everySectionFoldsFromItsTitleAndRemembers() throws Exception
+	{
+		Calls calls = new Calls();
+		DreamChasersPanel panel = newPanel(calls);
+		panel.setConnected(true);
+		panel.showCompetition(ok("competition.json", CompetitionResponse.class));
+		flush();
+		assertTrue(allText(panel).contains("Skill of the Month - Fishing"));
+
+		SwingUtilities.invokeAndWait(() -> panel.toggleSection("competition"));
+		flush();
+		String text = allText(panel);
+		assertTrue("the title stays", text.contains("COMPETITION"));
+		assertFalse("the body goes", text.contains("Skill of the Month - Fishing"));
+		assertEquals("collapsed competition", calls.log.get(calls.log.size() - 1));
+		snapshot(panel, "collapsed");
+
+		// saved, then restored on the next start
+		DreamChasersPanel again = newPanel(new Calls());
+		again.setConnected(true);
+		again.showCompetition(ok("competition.json", CompetitionResponse.class));
+		again.setCollapsed(" competition ,");
+		flush();
+		assertFalse(allText(again).contains("Skill of the Month - Fishing"));
+
+		SwingUtilities.invokeAndWait(() -> panel.toggleSection("competition"));
+		flush();
+		assertTrue(allText(panel).contains("Skill of the Month - Fishing"));
+		assertEquals("collapsed ", calls.log.get(calls.log.size() - 1));
+	}
+
+	@Test
+	public void verifyForDiscordFoldsAwayOnceTheNameIsVerified() throws Exception
+	{
+		DreamChasersPanel panel = newPanel(new Calls());
+		panel.setConnected(true);
+		panel.setOwnClan(null, "Tadeko");
+		panel.verifyDone("Verified: Tadeko is linked to your Discord.", false);
+		panel.setVerifiedAs("Tadeko");
+		flush();
+		String text = allText(panel);
+		assertFalse(text, text.contains("VERIFY FOR DISCORD"));
+		assertTrue(text, text.contains("Verified as <b>Tadeko</b>."));
+		snapshot(panel, "verified");
+
+		// another account, not verified: the section is back
+		panel.setVerifiedAs(null);
+		flush();
+		assertTrue(allText(panel).contains("VERIFY FOR DISCORD"));
 	}
 
 	@Test

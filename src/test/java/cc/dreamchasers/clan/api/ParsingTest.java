@@ -115,4 +115,13 @@ public class ParsingTest
 		assertEquals(2, HallOfFameDigest.recentFirsts(hof, 2).size());
 		assertEquals(0, HallOfFameDigest.recentFirsts(null, 5).size());
 	}
+
+	@Test
+	public void meCarriesTheVerifiedNames()
+	{
+		MeResponse me = new Gson().fromJson("{\"apiVersion\":1,\"name\":\"Tadeko\",\"verified\":[\"Tadeko\",\"Tad alt\"]}", MeResponse.class);
+		assertEquals("Tadeko", me.getName());
+		assertEquals(java.util.Arrays.asList("Tadeko", "Tad alt"), me.getVerified());
+		assertNull("older sites send no list", new Gson().fromJson("{\"name\":\"Tadeko\"}", MeResponse.class).getVerified());
+	}
 }

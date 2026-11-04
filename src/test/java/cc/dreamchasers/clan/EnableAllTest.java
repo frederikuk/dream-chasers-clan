@@ -146,13 +146,58 @@ public class EnableAllTest
 		assertEquals(2, s.connects);
 		assertTrue("a bounded number of events", s.events < 40);
 
-		// turning features on by hand never ticks it
+		// turning all seven on by hand ticks it, once the last one goes on (not before)
 		for (EnableAll.Feature f : EnableAll.FEATURES)
 		{
+			assertFalse("not while one is still off", s.get(ALL));
 			s.set(f.getKey(), true);
+			s.drain();
 		}
+		assertTrue(s.get(ALL));
+		assertTrue(s.allFeatures(true));
+		assertTrue("a bounded number of events", s.events < 60);
+
+		// and turning one off again unticks it, leaving the others on
+		s.set(DreamChasersClanConfig.LOOT_KEY, false);
 		s.drain();
 		assertFalse(s.get(ALL));
+		assertEquals(6, EnableAll.FEATURES.stream().filter(f -> s.get(f.getKey())).count());
+	}
+
+	@Test
+	public void allOnByHandWhileSignedOutDoesNotTickIt()
+	{
+		for (boolean sync : new boolean[]{true, false})
+		{
+			Settings s = new Settings(sync);
+			s.signedIn = false;
+			for (EnableAll.Feature f : EnableAll.FEATURES)
+			{
+				s.set(f.getKey(), true);
+			}
+			s.drain();
+			assertFalse(s.get(ALL));
+			assertTrue(s.allFeatures(true));
+		}
+	}
+
+	@Test
+	public void tickedWhileSignedOutKeepsFeaturesTickedByHand()
+	{
+		for (boolean sync : new boolean[]{true, false})
+		{
+			Settings s = new Settings(sync);
+			s.signedIn = false;
+			for (EnableAll.Feature f : EnableAll.FEATURES)
+			{
+				s.set(f.getKey(), true);
+			}
+			s.drain();
+			s.set(ALL, true);
+			s.drain();
+			assertFalse("it unticks itself", s.get(ALL));
+			assertTrue("and leaves the seven the member ticked on", s.allFeatures(true));
+		}
 	}
 
 	@Test

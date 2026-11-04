@@ -74,10 +74,14 @@ final class EnableAll
 	 * <ul>
 	 * <li>Ticked while not signed in: unticks itself and changes nothing else.</li>
 	 * <li>Ticked: every feature on.</li>
-	 * <li>Unticked while every feature is on (the member unticked it): every feature off.</li>
+	 * <li>Unticked while signed in and every feature is on (the member unticked it): every feature off.
+	 * Not while signed out: then the untick is its own refusal above, and the features
+	 * the member ticked by hand stay on.</li>
 	 * <li>A feature turned off while it is ticked: untick it, and nothing else.
 	 * That untick arrives here with a feature already off, so it switches
 	 * nothing off: no loop, whether ConfigChanged is delivered at once or later.</li>
+	 * <li>The last feature turned on by hand while signed in: tick it. That tick
+	 * arrives here with every feature already on, so it sets nothing: no loop.</li>
 	 * </ul>
 	 */
 	static boolean onChanged(String key, Predicate<String> isOn, BiConsumer<String, Boolean> set, boolean signedIn)
@@ -98,7 +102,7 @@ final class EnableAll
 				}
 				return true;
 			}
-			if (allOn(isOn))
+			if (allOn(isOn) && signedIn)
 			{
 				setAll(set, false);
 			}
@@ -107,6 +111,10 @@ final class EnableAll
 		if (isFeatureKey(key) && !isOn.test(key) && isOn.test(DreamChasersClanConfig.ENABLE_ALL_KEY))
 		{
 			set.accept(DreamChasersClanConfig.ENABLE_ALL_KEY, false);
+		}
+		else if (isFeatureKey(key) && isOn.test(key) && signedIn && !isOn.test(DreamChasersClanConfig.ENABLE_ALL_KEY) && allOn(isOn))
+		{
+			set.accept(DreamChasersClanConfig.ENABLE_ALL_KEY, true);
 		}
 		return false;
 	}

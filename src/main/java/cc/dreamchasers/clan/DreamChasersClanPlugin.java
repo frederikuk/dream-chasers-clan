@@ -15,6 +15,7 @@ import cc.dreamchasers.clan.api.HallOfFameResponse;
 import cc.dreamchasers.clan.api.LiveActionResponse;
 import cc.dreamchasers.clan.api.LiveJoinResponse;
 import cc.dreamchasers.clan.api.LiveResponse;
+import cc.dreamchasers.clan.api.MeResponse;
 import cc.dreamchasers.clan.api.ModelStatusResponse;
 import cc.dreamchasers.clan.api.RaidResponse;
 import cc.dreamchasers.clan.api.BatchResponse;
@@ -38,7 +39,9 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
@@ -96,7 +99,7 @@ import okhttp3.OkHttpClient;
 )
 public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.Listener
 {
-	static final String VERSION = "0.5.0";
+	static final String VERSION = "0.5.1";
 	/** RuneLite's HTTP client puts its own "RuneLite/x.y.z" in front of this. */
 	static final String USER_AGENT = "DreamChasersClanPlugin/" + VERSION
 		+ " (+https://dream-chasers.cc; Discord: frederikuk)";
@@ -181,6 +184,8 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	private volatile boolean liveConsented;
 	/** Set when the member takes a stream slot, cleared when they leave or withdraw. */
 	private volatile boolean liveOnStream;
+	/** Names the site has verified to this member (GET /plugin/me); empty until known. */
+	private volatile List<String> verifiedNames = Collections.emptyList();
 	/** Raid-stat answers in a row saying the member isn't on a stream slot. */
 	private int raidNotShown;
 	/** After this many, the member is taken as off the stream and raid stats stop until they join again. */
@@ -215,6 +220,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 
 		raidStats = new RaidStats();
 		connectFlow = new ConnectFlow(api, executor, Clock.systemUTC(), url -> safeLinks.open(url, safeLinks.site()));
+		panel.setCollapsed(config.collapsedSections());
 		panel.setConnected(config.connect());
 		panel.setConnectDismissed(config.connectDismissed());
 		panel.setLiveEnabled(config.joinLive());
@@ -326,6 +332,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	{
 		backfillDue = true;
 		clanCheckDue = true;
+		updateVerified();     // another account may be verified, or not
 		DreamChasersPanel panel = this.panel;
 		if (panel != null && panel.isShowing())
 		{
@@ -844,7 +851,12 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		// "Enable everything": on switches the seven features on, off switches them
 		// off; one turned off by hand unticks it. It only flips settings: it never
 		// opens the browser. Not signed in? The panel's Connect card does that.
-		EnableAll.onChanged(event.getKey(), this::featureOn, this::setFeature, signedInName() != null);
+		boolean signedIn = signedInName() != null;
+		if (DreamChasersClanConfig.ENABLE_ALL_KEY.equals(event.getKey()) && featureOn(event.getKey()) && !signedIn)
+		{
+			panel.setEnableAllRefused(true);     // it unticks itself below: say why in the Connect card
+		}
+		EnableAll.onChanged(event.getKey(), this::featureOn, this::setFeature, signedIn);
 		if (EnableAll.isFeatureKey(event.getKey()))
 		{
 			panel.setAllOn(EnableAll.allOn(this::featureOn));
@@ -943,6 +955,15 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		api.fetch(Endpoint.LINKS, force, panel::showLinks);
 		if (signedInName() != null)
 		{
+			api.fetch(Endpoint.ME, force, result ->
+			{
+				MeResponse me = result.getValue();
+				if (result.getStatus() == ApiResult.Status.OK && me != null && me.getVerified() != null)
+				{
+					verifiedNames = me.getVerified();
+					updateVerified();
+				}
+			});
 			api.fetch(Endpoint.EVENTS, force, result ->
 			{
 				if (result.getStatus() == ApiResult.Status.UNAUTHORIZED)
@@ -1213,6 +1234,9 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 			{
 				panel.verifyDone(message, false);
 				signedIn(token, name);
+				List<String> v = new ArrayList<>(verifiedNames);
+				v.add(name);
+				verifiedNames = v;
 			}
 
 			@Override
@@ -1466,6 +1490,12 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	}
 
 	@Override
+	public void collapsedChanged(String keys)
+	{
+		configManager.setConfiguration(DreamChasersClanConfig.GROUP, DreamChasersClanConfig.COLLAPSED_KEY, keys);
+	}
+
+	@Override
 	public void signOut()
 	{
 		// with Connect off nothing is sent; the token is only forgotten here
@@ -1478,6 +1508,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 
 	private void forgetToken()
 	{
+		verifiedNames = Collections.emptyList();
 		liveConsented = false;
 		liveOnStream = false;
 		configManager.unsetConfiguration(DreamChasersClanConfig.GROUP, DreamChasersClanConfig.TOKEN_KEY);
@@ -1489,7 +1520,47 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		if (panel != null)
 		{
 			panel.setSignedInAs(null);
+			panel.setVerifiedAs(null);
 		}
+	}
+
+	/**
+	 * Verify for Discord folds away once the logged-in name is one the site has
+	 * verified to this member (from {@code /plugin/me}, already fetched with the
+	 * panel: no extra request).
+	 */
+	private void updateVerified()
+	{
+		DreamChasersPanel panel = this.panel;
+		if (panel == null)
+		{
+			return;
+		}
+		List<String> names = verifiedNames;
+		withRsn(rsn ->
+		{
+			String key = rsnKey(rsn);
+			String match = null;
+			for (String n : names)
+			{
+				if (key != null && key.equals(rsnKey(n)))
+				{
+					match = rsn;
+				}
+			}
+			panel.setVerifiedAs(match);
+		});
+	}
+
+	/** RSNs compare without case, and spaces, underscores and hyphens read alike in game. */
+	static String rsnKey(String rsn)
+	{
+		if (rsn == null)
+		{
+			return null;
+		}
+		String k = rsn.replace('\u00a0', ' ').replace('_', ' ').replace('-', ' ').trim().toLowerCase(Locale.ROOT);
+		return k.isEmpty() ? null : k;
 	}
 
 	/** The signed-in member's name, or null when there's no token. */

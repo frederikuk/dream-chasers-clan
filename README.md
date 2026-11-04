@@ -21,15 +21,20 @@ share your raid stats while you're on DRM Live, and copy the clan's tile packs.
 ## Settings
 
 Every setting below that talks to dream-chasers.cc is off until you turn it on.
+RuneLite shows them in five sections: Connect, Appearance, Data, PvM and
+Livestream.
 Connect first: **Connect to dream-chasers.cc** is the first setting, and you
 sign in with the panel's **Connect** card. Once you're signed in, the panel
 offers **Enable everything** (with the IP-address warning next to it), and the
 second setting does the same. It switches on Post personal bests, Post
 collection log, Clan splash, Clan tile packs, Join DRM Live and Share raid
-stats. Before you're signed in it does nothing (the setting unticks itself). It
+stats. Before you're signed in it does nothing: the setting unticks itself and
+the Connect card says why. It
 never agrees to the DRM Live stream consent or sends your character's model;
 those stay their own buttons. Untick it to turn them all off again. Turn one
-feature off by hand and it unticks itself, leaving the others as they are.
+feature off by hand and it unticks itself, leaving the others as they are;
+turn all of them on by hand and it ticks itself. RuneLite's settings show these
+changes once you close and reopen them.
 
 - **Connect to dream-chasers.cc** (off by default). Nothing is fetched until you
   turn this on, or press **Connect** on the panel's consent card (the same

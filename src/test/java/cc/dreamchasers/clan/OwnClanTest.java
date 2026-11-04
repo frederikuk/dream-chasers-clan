@@ -108,4 +108,13 @@ public class OwnClanTest
 		assertFalse(OwnClan.isDreamChasers("Dream Chasers"));
 		assertFalse(OwnClan.isDreamChasers(null));
 	}
+
+	@Test
+	public void verifiedNamesMatchTheWayTheGameWritesThem()
+	{
+		assertEquals(DreamChasersClanPlugin.rsnKey("Fred 525"), DreamChasersClanPlugin.rsnKey("fred_525"));
+		assertEquals(DreamChasersClanPlugin.rsnKey("Fred 525"), DreamChasersClanPlugin.rsnKey("FRED-525"));
+		assertNull(DreamChasersClanPlugin.rsnKey(" "));
+		assertNull(DreamChasersClanPlugin.rsnKey(null));
+	}
 }

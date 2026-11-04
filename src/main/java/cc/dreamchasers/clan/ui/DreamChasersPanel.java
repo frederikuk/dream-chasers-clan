@@ -31,12 +31,17 @@ import java.awt.Font;
 import java.awt.Image;
 import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
+import java.awt.event.MouseEvent;
+import java.awt.event.MouseAdapter;
 import java.awt.image.BufferedImage;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
@@ -141,6 +146,11 @@ public class DreamChasersPanel extends PluginPanel
 		{
 		}
 
+		/** A section was folded or unfolded: the folded ones, comma-separated, to keep across restarts. */
+		default void collapsedChanged(String keys)
+		{
+		}
+
 		/** Opens a link the site gave us in the browser; the panel has checked it with {@link SafeLinks}. */
 		default void open(String url)
 		{
@@ -186,6 +196,12 @@ public class DreamChasersPanel extends PluginPanel
 	private String verifyBlocker = "Open your clan tab or wait a few seconds after login";
 	private String verifyRsn;
 	private boolean verifyOpen;
+	/** The logged-in name when the site has verified it to this member: Verify for Discord folds to one line. */
+	private String verifiedAs;
+	/** "Enable everything" was ticked before signing in (so it unticked itself): the Connect card says why. */
+	private boolean enableAllRefused;
+	/** Sections the member folded (by key); only their title row shows. */
+	private final Set<String> collapsed = new LinkedHashSet<>();
 	private boolean verifyBusy;
 	private String verifyDiscordName;
 	private String verifyMessage;
@@ -310,6 +326,10 @@ public class DreamChasersPanel extends PluginPanel
 		onEdt(() ->
 		{
 			signedInAs = name == null || name.isEmpty() ? null : name;
+			if (signedInAs != null)
+			{
+				enableAllRefused = false;
+			}
 			if (signedInAs == null)
 			{
 				liveResult = null;
@@ -428,6 +448,88 @@ public class DreamChasersPanel extends PluginPanel
 			verifyRsn = rsn;
 			verifyDiscordName = discordName;
 			verifyMessage = null;
+			renderVerify();
+		});
+	}
+
+	/** "Enable everything" was ticked before signing in; cleared by signing in. */
+	public void setEnableAllRefused(boolean refused)
+	{
+		onEdt(() ->
+		{
+			enableAllRefused = refused;
+			renderAccount();
+		});
+	}
+
+	/** The folded sections, as saved (comma-separated keys). */
+	public void setCollapsed(String keys)
+	{
+		onEdt(() ->
+		{
+			collapsed.clear();
+			if (keys != null)
+			{
+				Arrays.stream(keys.split(",")).map(String::trim).filter(k -> !k.isEmpty()).forEach(collapsed::add);
+			}
+			renderAll();
+		});
+	}
+
+	/**
+	 * A section's title row, which folds and unfolds it. Returns true when the
+	 * section is folded: the caller adds nothing more.
+	 */
+	private boolean header(JPanel section, String key, String name)
+	{
+		boolean folded = collapsed.contains(key);
+		JPanel row = new JPanel(new BorderLayout());
+		row.setOpaque(false);
+		row.setAlignmentX(Component.LEFT_ALIGNMENT);
+		row.add(title(name), BorderLayout.CENTER);
+		JLabel arrow = new JLabel(folded ? "\u25B8" : "\u25BE");
+		arrow.setForeground(Brand.GOLD);
+		arrow.setFont(new Font(Font.DIALOG, Font.PLAIN, 11));     // the RuneScape fonts have no arrows
+		arrow.setBorder(new EmptyBorder(0, 0, 4, 0));
+		row.add(arrow, BorderLayout.EAST);
+		row.setMaximumSize(new Dimension(Integer.MAX_VALUE, row.getPreferredSize().height));
+		row.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		row.setToolTipText(folded ? "Show" : "Hide");
+		row.setName("header:" + key);
+		row.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent e)
+			{
+				toggleSection(key);
+			}
+		});
+		section.add(row);
+		return folded;
+	}
+
+	/** Folds or unfolds one section (on the EDT), and saves the folded set. */
+	void toggleSection(String key)
+	{
+		if (!collapsed.remove(key))
+		{
+			collapsed.add(key);
+		}
+		listener.collapsedChanged(String.join(",", collapsed));
+		renderAll();
+	}
+
+	/** The logged-in name once it is verified (Verify for Discord folds to one line), else null. */
+	public void setVerifiedAs(String rsn)
+	{
+		onEdt(() ->
+		{
+			if (rsn != null && !rsn.equals(verifiedAs) && !verifyMessageIsError)
+			{
+				verifyOpen = false;
+				verifyMessage = null;
+			}
+			verifiedAs = rsn;
 			renderVerify();
 		});
 	}
@@ -600,7 +702,11 @@ public class DreamChasersPanel extends PluginPanel
 	{
 		events.removeAll();
 		events.setVisible(connected);
-		events.add(title("Events"));
+		if (header(events, "events", "Events"))
+		{
+			done(events);
+			return;
+		}
 		if (!connected)
 		{
 			done(events);
@@ -710,7 +816,15 @@ public class DreamChasersPanel extends PluginPanel
 		}
 		if (!connected && connectDismissed)
 		{
-			account.add(title("Not connected"));
+			if (header(account, "account", "Not connected"))
+			{
+				done(account);
+				return;
+			}
+			if (enableAllRefused)
+			{
+				account.add(text("<b>Enable everything</b> needs you connected first, so it turned itself off. Press Connect, then close and reopen the settings and tick it again.", Brand.GOLD));
+			}
 			account.add(text("Connect to see clan events, the competition and the Hall of Fame, and to join DRM Live.", Brand.MUTED));
 			JPanel b = row();
 			b.add(primary("Connect…", () -> onEdt(() ->
@@ -725,7 +839,11 @@ public class DreamChasersPanel extends PluginPanel
 		}
 		if (waitingCode != null)
 		{
-			account.add(title("Connecting"));
+			if (header(account, "account", "Connecting"))
+			{
+				done(account);
+				return;
+			}
 			account.add(text("Waiting for you to approve in the browser…<br>Check the page shows this code:", Brand.TEXT));
 			JLabel code = new JLabel(esc(waitingCode));
 			code.setForeground(Brand.GOLD);
@@ -738,7 +856,15 @@ public class DreamChasersPanel extends PluginPanel
 			done(account);
 			return;
 		}
-		account.add(title("Connect to Dream Chasers"));
+		if (header(account, "account", "Connect to Dream Chasers"))
+		{
+			done(account);
+			return;
+		}
+		if (enableAllRefused)
+		{
+			account.add(text("<b>Enable everything</b> needs you connected first, so it turned itself off. Press Connect, then close and reopen the settings and tick it again.", Brand.GOLD));
+		}
 		if (!connected)
 		{
 			account.add(text("Connecting lets this panel show clan events, the competition and the Hall of Fame, and lets you join DRM Live.", Brand.TEXT));
@@ -804,6 +930,12 @@ public class DreamChasersPanel extends PluginPanel
 			done(verify);
 			return;
 		}
+		if (verifiedAs != null && !verifyOpen && !verifyBusy && verifyDiscordName == null && verifyMessage == null)
+		{
+			verify.add(text("Verified as <b>" + esc(verifiedAs) + "</b>.", Brand.MUTED));
+			done(verify);
+			return;
+		}
 		if (folded)
 		{
 			JPanel b = row();
@@ -816,7 +948,11 @@ public class DreamChasersPanel extends PluginPanel
 			done(verify);
 			return;
 		}
-		verify.add(title("Verify for Discord"));
+		if (header(verify, "verify", "Verify for Discord"))
+		{
+			done(verify);
+			return;
+		}
 		if (verifyDiscordName != null)
 		{
 			verify.add(text("This links <b>" + esc(verifyRsn) + "</b> to Discord <b>" + esc(verifyDiscordName) + "</b>. "
@@ -930,7 +1066,11 @@ public class DreamChasersPanel extends PluginPanel
 			done(live);
 			return;
 		}
-		live.add(title("DRM Live"));
+		if (header(live, "live", "DRM Live"))
+		{
+			done(live);
+			return;
+		}
 		if (!liveEnabled)
 		{
 			live.add(text("Want to get on the clan stream? Turn on <b>Join DRM Live</b> in this plugin's settings.", Brand.MUTED));
@@ -1048,7 +1188,11 @@ public class DreamChasersPanel extends PluginPanel
 			done(splash);
 			return;
 		}
-		splash.add(title("Clan splash"));
+		if (header(splash, "splash", "Clan splash"))
+		{
+			done(splash);
+			return;
+		}
 		ApiResult<FeaturedResponse> fr = featuredResult;
 		FeaturedResponse f = fr == null ? null : fr.getValue();
 		if (featuredImage != null)
@@ -1172,7 +1316,11 @@ public class DreamChasersPanel extends PluginPanel
 	{
 		competition.removeAll();
 		competition.setVisible(connected);
-		competition.add(title("Competition"));
+		if (header(competition, "competition", "Competition"))
+		{
+			done(competition);
+			return;
+		}
 		if (!connected)
 		{
 			done(competition);
@@ -1262,7 +1410,11 @@ public class DreamChasersPanel extends PluginPanel
 	{
 		hallOfFame.removeAll();
 		hallOfFame.setVisible(connected);
-		hallOfFame.add(title("Hall of Fame"));
+		if (header(hallOfFame, "halloffame", "Hall of Fame"))
+		{
+			done(hallOfFame);
+			return;
+		}
 		if (!connected)
 		{
 			done(hallOfFame);
@@ -1304,7 +1456,11 @@ public class DreamChasersPanel extends PluginPanel
 			done(tiles);
 			return;
 		}
-		tiles.add(title("Tile packs"));
+		if (header(tiles, "tiles", "Tile packs"))
+		{
+			done(tiles);
+			return;
+		}
 		ApiResult<TilesResponse> r = tilesResult;
 		List<TilesResponse.Pack> packs = r == null || r.getValue() == null || r.getValue().getPacks() == null
 			? null : r.getValue().getPacks();
@@ -1354,7 +1510,11 @@ public class DreamChasersPanel extends PluginPanel
 	private void renderLinks()
 	{
 		links.removeAll();
-		links.add(title("Dream Chasers"));
+		if (header(links, "links", "Dream Chasers"))
+		{
+			done(links);
+			return;
+		}
 		JPanel buttons = row();
 		LinksResponse l = linksResult == null ? null : linksResult.getValue();
 		if (l != null && notBlank(l.getDiscord()))
