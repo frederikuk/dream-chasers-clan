@@ -60,7 +60,7 @@ public class OwnClanTest
 		OwnClan.Reading r = OwnClan.judge(false, null, "Maho z h", false, HASH);
 		assertEquals(OwnClan.State.UNKNOWN, r.getState());
 		assertNull(r.getDigest());
-		assertEquals("Open your clan tab or wait a few seconds after login", OwnClan.blocker(r.getState()));
+		assertEquals("Join DRM Chasers in game first, or open your clan tab and wait a few seconds", OwnClan.blocker(r));
 	}
 
 	@Test
@@ -82,13 +82,21 @@ public class OwnClanTest
 		assertEquals(OwnClan.State.NOT_IN_CLAN, r.getState());
 		assertNull(r.getRsn());
 		assertNull(r.getDigest());
-		assertEquals("Join the clan in game first", OwnClan.blocker(r.getState()));
+		assertEquals("Your clan in game isn't DRM Chasers. Join DRM Chasers first", OwnClan.blocker(r));
 	}
 
 	@Test
 	public void notFoundInOwnRecordIsNotInClan()
 	{
-		assertEquals(OwnClan.State.NOT_IN_CLAN, OwnClan.judge(true, "DRM Chasers", "Maho z h", false, HASH).getState());
+		OwnClan.Reading r = OwnClan.judge(true, "DRM Chasers", "Maho z h", false, HASH);
+		assertEquals(OwnClan.State.NOT_IN_CLAN, r.getState());
+		assertEquals("Join the clan in game first", OwnClan.blocker(r));
+	}
+
+	@Test
+	public void loggedOutSaysLogIn()
+	{
+		assertEquals("Log in to the game to verify", OwnClan.blocker(OwnClan.Reading.LOGGED_OUT));
 	}
 
 	@Test
@@ -100,7 +108,7 @@ public class OwnClanTest
 			assertEquals(name, OwnClan.State.IN_CLAN, r.getState());
 			assertEquals("Maho z h", r.getRsn());
 			assertEquals(OwnClan.digest(HASH), r.getDigest());
-			assertNull(OwnClan.blocker(r.getState()));
+			assertNull(OwnClan.blocker(r));
 		}
 		assertFalse(OwnClan.isDreamChasers("DRM Chasers 2"));
 		// the WOM group's display name is not the in-game clan

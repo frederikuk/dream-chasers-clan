@@ -75,6 +75,9 @@ public class DreamChasersPanel extends PluginPanel
 		+ "2. Sign in with Discord, if it asks.<br>"
 		+ "3. Check the code on the page matches this panel, then press <b>Allow</b>.<br>"
 		+ "The panel updates by itself.";
+	/** "Enable everything" was ticked before signing in, so it turned itself off. */
+	static final String ENABLE_ALL_REFUSED = "<b>Enable everything</b> needs you signed in first, so it turned itself off. "
+		+ "Follow the steps below, then close and reopen the settings and tick it again.";
 	/** Used when the live server sends no steps of its own. */
 	static final List<String> DEFAULT_STEPS = List.of(
 		"Press Open my stream link. In the browser press Start, and pick the RuneLite window only, not your whole screen.",
@@ -103,8 +106,13 @@ public class DreamChasersPanel extends PluginPanel
 
 		void signOut();
 
-		/** The consent card's Connect: opt in, then approve in the browser. */
+		/** "Already verified on another PC?" then Connect: opt in, then approve in the browser. */
 		void connect();
+
+		/** A join step (Join our Discord, Open dream-chasers.cc/join) was pressed: that is the opt-in to Connect. */
+		default void optIn()
+		{
+		}
 
 		void cancelConnect();
 
@@ -166,6 +174,7 @@ public class DreamChasersPanel extends PluginPanel
 	private final JLabel status = new JLabel();
 	private final JPanel account = section();
 	private final JPanel verify = section();
+	private final JPanel roster = section();
 	private final JPanel everything = section();
 	private final JPanel clogHint = section();
 	private final JPanel live = section();
@@ -192,8 +201,12 @@ public class DreamChasersPanel extends PluginPanel
 	private String waitingCode;
 	private String connectMessage;
 	private boolean showCodeEntry;
+	/** "Already verified on another PC?" is open: the browser-approve Connect and the link code. */
+	private boolean showOtherPc;
+	/** Officer roster sync's one line; null hides it. */
+	private String rosterLine;
 	// verify for Discord (verified join)
-	private String verifyBlocker = "Open your clan tab or wait a few seconds after login";
+	private String verifyBlocker = "Log in to the game to verify";
 	private String verifyRsn;
 	private boolean verifyOpen;
 	/** The logged-in name when the site has verified it to this member: Verify for Discord folds to one line. */
@@ -251,7 +264,7 @@ public class DreamChasersPanel extends PluginPanel
 		status.setAlignmentX(Component.LEFT_ALIGNMENT);
 		add(status);
 		add(Box.createVerticalStrut(6));
-		for (JPanel p : new JPanel[]{verify, account, everything, clogHint, live, splash, events, competition, hallOfFame, tiles, links})
+		for (JPanel p : new JPanel[]{account, verify, roster, everything, clogHint, live, splash, events, competition, hallOfFame, tiles, links})
 		{
 			add(p);
 			add(Box.createVerticalStrut(8));
@@ -398,8 +411,13 @@ public class DreamChasersPanel extends PluginPanel
 	{
 		onEdt(() ->
 		{
+			boolean hadInvite = discordInvite() != null;
 			linksResult = result;
 			renderLinks();
+			if (hadInvite != (discordInvite() != null))
+			{
+				renderAccount();     // step 1 of the join card names the invite; only then, so nothing typed is lost
+			}
 		});
 	}
 
@@ -449,6 +467,16 @@ public class DreamChasersPanel extends PluginPanel
 			verifyDiscordName = discordName;
 			verifyMessage = null;
 			renderVerify();
+		});
+	}
+
+	/** Officer roster sync's status line (officers with the setting on only); null hides it. */
+	public void setRosterStatus(String line)
+	{
+		onEdt(() ->
+		{
+			rosterLine = line;
+			renderRoster();
 		});
 	}
 
@@ -676,6 +704,7 @@ public class DreamChasersPanel extends PluginPanel
 		renderStatus();
 		renderAccount();
 		renderVerify();
+		renderRoster();
 		renderEverything();
 		clogHint.setVisible(clogHint.getComponentCount() > 0);
 		renderLive();
@@ -715,7 +744,7 @@ public class DreamChasersPanel extends PluginPanel
 
 		if (signedInAs == null)
 		{
-			events.add(text("Events are for clan members. Connect above to see them here.", Brand.MUTED));
+			events.add(text("Events are for clan members. Follow the steps above to see them here.", Brand.MUTED));
 			done(events);
 			return;
 		}
@@ -801,9 +830,11 @@ public class DreamChasersPanel extends PluginPanel
 	}
 
 	/**
-	 * The account card: the consent card before opting in, then "How to
-	 * connect" with the Connect button, the wait for the browser, and the
-	 * manual code under "Have a code instead?". Hidden once signed in.
+	 * The join card, for anyone not signed in: one path, each step its own
+	 * button. 1 Join our Discord, 2 Open dream-chasers.cc/join, 3 Verify for
+	 * Discord (its own card, under this one). Pressing step 1 or 2 is the
+	 * opt-in: it turns Connect on. The browser-approve sign-in waits behind
+	 * "Already verified on another PC?". Hidden once signed in.
 	 */
 	private void renderAccount()
 	{
@@ -823,11 +854,11 @@ public class DreamChasersPanel extends PluginPanel
 			}
 			if (enableAllRefused)
 			{
-				account.add(text("<b>Enable everything</b> needs you connected first, so it turned itself off. Press Connect, then close and reopen the settings and tick it again.", Brand.GOLD));
+				account.add(text(ENABLE_ALL_REFUSED, Brand.GOLD));
 			}
-			account.add(text("Connect to see clan events, the competition and the Hall of Fame, and to join DRM Live.", Brand.MUTED));
+			account.add(text("Join to see clan events, the competition and the Hall of Fame, and to join DRM Live.", Brand.MUTED));
 			JPanel b = row();
-			b.add(primary("Connect…", () -> onEdt(() ->
+			b.add(primary("Join…", () -> onEdt(() ->
 			{
 				connectDismissed = false;
 				renderAccount();
@@ -850,41 +881,55 @@ public class DreamChasersPanel extends PluginPanel
 			code.setFont(FontManager.getRunescapeBoldFont().deriveFont(24f));
 			code.setAlignmentX(Component.LEFT_ALIGNMENT);
 			account.add(code);
+			account.add(text("Discord signs in with the account open on discord.com in your browser: use your main one.", Brand.MUTED));
+			if (connectMessage != null)
+			{
+				account.add(text(esc(connectMessage), Brand.WARN));
+			}
 			JPanel b = row();
 			b.add(button("Cancel", listener::cancelConnect));
 			account.add(b);
 			done(account);
 			return;
 		}
-		if (header(account, "account", "Connect to Dream Chasers"))
+		if (header(account, "account", "Join Dream Chasers"))
 		{
 			done(account);
 			return;
 		}
 		if (enableAllRefused)
 		{
-			account.add(text("<b>Enable everything</b> needs you connected first, so it turned itself off. Press Connect, then close and reopen the settings and tick it again.", Brand.GOLD));
+			account.add(text(ENABLE_ALL_REFUSED, Brand.GOLD));
 		}
 		if (!connected)
 		{
-			account.add(text("Connecting lets this panel show clan events, the competition and the Hall of Fame, and lets you join DRM Live.", Brand.TEXT));
-			account.add(text("&bull; dream-chasers.cc checks your RSN and that you're in the clan's Discord.<br>"
+			account.add(text("Link your RSN to the clan's Discord. This panel then shows clan events, the competition and the Hall of Fame, and lets you join DRM Live.", Brand.TEXT));
+			account.add(text("&bull; Step 1 or 2 turns on Connect to dream-chasers.cc.<br>"
 				+ "&bull; Your IP address goes to dream-chasers.cc, a server not run or checked by RuneLite.<br>"
 				+ "&bull; It never sees your Jagex or Discord password.", Brand.TEXT));
+		}
+		// the invite comes with /links, which only loads once Connect is on: before that, say where it is
+		boolean invite = discordInvite() != null;
+		account.add(text(invite ? "<b>1.</b> Join the clan's Discord."
+			: "<b>1.</b> Join the clan's Discord. The invite is on dream-chasers.cc/join.", Brand.TEXT));
+		JPanel step1 = row();
+		step1.add(primary(invite ? "Join our Discord" : "Get the Discord invite", this::joinDiscord));
+		account.add(step1);
+		account.add(text("<b>2.</b> On dream-chasers.cc/join press <b>Connect Discord</b>. It shows a code.", Brand.TEXT));
+		JPanel step2 = row();
+		step2.add(primary("Open dream-chasers.cc/join", this::openJoin));
+		account.add(step2);
+		account.add(text("<b>3.</b> Type the code in <b>Verify for Discord</b> "
+			+ (connected ? "below" : "(it appears below after step 1 or 2)") + ", then press Verify.", Brand.TEXT));
+		if (!connected)
+		{
 			JPanel b = row();
-			b.add(primary("Connect", listener::connect));
 			b.add(button("Not now", listener::dismissConnect));
+			b.add(button("Privacy", () -> go(linkOr(LinksResponse::getSite, SITE) + "/privacy", safeLinks.site())));
 			account.add(b);
-			JPanel p = row();
-			p.add(button("Privacy", () -> go(linkOr(LinksResponse::getSite, SITE) + "/privacy", safeLinks.site())));
-			account.add(p);
 		}
 		else
 		{
-			account.add(text(HOW_TO_CONNECT, Brand.TEXT));
-			JPanel b = row();
-			b.add(primary("Connect", listener::connect));
-			account.add(b);
 			ApiResult<EventsResponse> r = eventsResult;
 			if (r != null && r.getStatus() == ApiResult.Status.UNAUTHORIZED && r.getMessage() != null
 				&& !"Not signed in".equals(r.getMessage()))
@@ -896,21 +941,84 @@ public class DreamChasersPanel extends PluginPanel
 		{
 			account.add(text(esc(connectMessage), Brand.WARN));
 		}
-		if (connected)
+		JPanel other = row();
+		other.add(button(showOtherPc ? "Hide" : "Already verified on another PC?", () -> onEdt(() ->
 		{
-			JPanel more = row();
-			more.add(button(showCodeEntry ? "Hide code entry" : "Have a code instead?", () -> onEdt(() ->
+			showOtherPc = !showOtherPc;
+			renderAccount();
+		})));
+		account.add(other);
+		if (showOtherPc)
+		{
+			account.add(text(HOW_TO_CONNECT, Brand.TEXT));
+			JPanel b = row();
+			b.add(primary("Connect", listener::connect));
+			account.add(b);
+			if (connected)
 			{
-				showCodeEntry = !showCodeEntry;
-				renderAccount();
-			})));
-			account.add(more);
-			if (showCodeEntry)
-			{
-				renderCodeEntry();
+				JPanel more = row();
+				more.add(button(showCodeEntry ? "Hide code entry" : "Have a code instead?", () -> onEdt(() ->
+				{
+					showCodeEntry = !showCodeEntry;
+					renderAccount();
+				})));
+				account.add(more);
+				if (showCodeEntry)
+				{
+					renderCodeEntry();
+				}
 			}
 		}
 		done(account);
+	}
+
+	/** Step 1: the site's Discord invite when it has given one, else the join page (which has it too). */
+	private void joinDiscord()
+	{
+		listener.optIn();
+		String invite = discordInvite();
+		if (invite != null)
+		{
+			go(invite, SafeLinks.DISCORD);
+		}
+		else
+		{
+			openJoinPage();
+		}
+	}
+
+	/** The site's Discord invite from /links, or null before links have loaded. */
+	private String discordInvite()
+	{
+		LinksResponse l = linksResult == null ? null : linksResult.getValue();
+		return l != null && notBlank(l.getDiscord()) ? l.getDiscord() : null;
+	}
+
+	/** Step 2. */
+	private void openJoin()
+	{
+		listener.optIn();
+		openJoinPage();
+	}
+
+	private void openJoinPage()
+	{
+		go(linkOr(LinksResponse::getSite, SITE) + "/join", safeLinks.site());
+	}
+
+	/** Officer roster sync: one muted line under Verify for Discord, only when the plugin gives one. */
+	private void renderRoster()
+	{
+		roster.removeAll();
+		String line = rosterLine;
+		roster.setVisible(line != null);
+		if (line != null)
+		{
+			// the site's own messages already end in a full stop
+			boolean ended = line.endsWith(".") || line.endsWith("!") || line.endsWith("?");
+			roster.add(text(esc(line) + (ended ? "" : "."), Brand.MUTED));
+		}
+		done(roster);
 	}
 
 	/**
@@ -923,7 +1031,7 @@ public class DreamChasersPanel extends PluginPanel
 	{
 		verify.removeAll();
 		boolean folded = signedInAs != null && !verifyOpen && verifyDiscordName == null && !verifyBusy && verifyMessage == null;
-		boolean show = connected && waitingCode == null;     // the browser wait (old Connect) has the card to itself
+		boolean show = connected;     // with Connect on, also while the browser-approve sign-in waits
 		verify.setVisible(show);
 		if (!show)
 		{
@@ -980,10 +1088,17 @@ public class DreamChasersPanel extends PluginPanel
 			done(verify);
 			return;
 		}
-		verify.add(text("On dream-chasers.cc/join press <b>Connect Discord</b>, then type the code it shows here.", Brand.MUTED));
-		JPanel getCode = row();
-		getCode.add(button("Get a code", () -> go(linkOr(LinksResponse::getSite, SITE) + "/join", safeLinks.site())));
-		verify.add(getCode);
+		if (signedInAs != null)
+		{
+			verify.add(text("On dream-chasers.cc/join press <b>Connect Discord</b>, then type the code it shows here.", Brand.MUTED));
+			JPanel getCode = row();
+			getCode.add(button("Get a code", this::openJoinPage));
+			verify.add(getCode);
+		}
+		else
+		{
+			verify.add(text("Type the code from dream-chasers.cc/join here.", Brand.MUTED));
+		}
 		boolean ready = verifyBlocker == null;
 		if (!ready)
 		{

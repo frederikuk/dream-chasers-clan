@@ -68,7 +68,7 @@ public class JoinFlow
 	{
 		current = null;
 		OwnClan.Reading reading = ownClan.get();
-		String blocker = OwnClan.blocker(reading.getState());
+		String blocker = OwnClan.blocker(reading);
 		if (blocker != null)
 		{
 			listener.finished(blocker + ".", true);

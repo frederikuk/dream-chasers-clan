@@ -28,6 +28,7 @@ public interface DreamChasersClanConfig extends Config
 	String RAID_KEY = "shareRaidStats";
 	String TILES_KEY = "tilePacks";
 	String ENABLE_ALL_KEY = "enableEverything";
+	String ROSTER_KEY = "officerRosterSync";
 	/** When old PBs were last sent: "date|rsn|hash" (once a day at most). */
 	String PB_BACKFILL_KEY = "pbBackfillSent";
 	/** The panel sections the member folded, comma-separated. */
@@ -42,7 +43,7 @@ public interface DreamChasersClanConfig extends Config
 
 	@ConfigSection(
 		name = "Connect",
-		description = "Sign in to dream-chasers.cc, and Enable everything",
+		description = "Sign in to dream-chasers.cc, Enable everything, and the officers' roster sync",
 		position = 0
 	)
 	String CONNECT_SECTION = "sectionConnect";
@@ -78,7 +79,7 @@ public interface DreamChasersClanConfig extends Config
 	@ConfigItem(
 		keyName = ENABLE_ALL_KEY,
 		name = "Enable everything",
-		description = TIP + "Connect first (press Connect in the Dream Chasers panel); until you're signed in it turns itself straight back off and the panel says why. "
+		description = TIP + "Sign in first (follow the steps in the Dream Chasers panel); until you're signed in it turns itself straight back off and the panel says why. "
 			+ "Then it turns on every Dream Chasers feature below: Post personal bests, Post collection log, "
 			+ "Clan splash, Clan tile packs, Join DRM Live and Share raid stats. Ticking it also turns Connect back on if you'd turned it off; untick to turn them all off, Connect included. It ticks itself once you have turned every one of them on. "
 			+ "RuneLite only shows the new ticks once you close and reopen these settings. "
@@ -103,6 +104,23 @@ public interface DreamChasersClanConfig extends Config
 		position = 0
 	)
 	default boolean connect()
+	{
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = ROSTER_KEY,
+		name = "Officer roster sync",
+		description = TIP + "Officers and up only: when you close the clan Members screen, send the clan's member list and ranks to dream-chasers.cc, which updates the Wise Old Man group. "
+			+ "Names and rank titles only. "
+			+ "Also verify pickup: when a clan chat line or a private message you get holds a DRM- code from the site's join page, sends that code and the sender's name "
+			+ "so the site can verify them (nothing else from chat is sent), and tells the site every 5 minutes that an officer's plugin is online. "
+			+ "Needs you signed in; Enable everything leaves it alone" + TIP_END,
+		warning = "This feature submits your IP address to a 3rd-party server not controlled or verified by RuneLite developers",
+		section = CONNECT_SECTION,
+		position = 9
+	)
+	default boolean officerRosterSync()
 	{
 		return false;
 	}

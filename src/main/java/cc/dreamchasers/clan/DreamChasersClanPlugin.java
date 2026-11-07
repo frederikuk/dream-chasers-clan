@@ -18,6 +18,8 @@ import cc.dreamchasers.clan.api.LiveResponse;
 import cc.dreamchasers.clan.api.MeResponse;
 import cc.dreamchasers.clan.api.ModelStatusResponse;
 import cc.dreamchasers.clan.api.RaidResponse;
+import cc.dreamchasers.clan.api.RosterResponse;
+import cc.dreamchasers.clan.api.WitnessResponse;
 import cc.dreamchasers.clan.api.BatchResponse;
 import cc.dreamchasers.clan.api.SubmitResponse;
 import cc.dreamchasers.clan.loot.ClogTracker;
@@ -37,6 +39,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -65,6 +68,8 @@ import net.runelite.api.clan.ClanSettings;
 import net.runelite.api.events.ClanChannelChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.ScriptPreFired;
+import net.runelite.api.events.WidgetClosed;
+import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.Model;
 import net.runelite.api.Player;
@@ -88,6 +93,7 @@ import net.runelite.client.plugins.loottracker.LootReceived;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.util.ImageUtil;
+import net.runelite.client.util.Text;
 import net.runelite.http.api.loottracker.LootRecordType;
 import okhttp3.OkHttpClient;
 
@@ -99,7 +105,7 @@ import okhttp3.OkHttpClient;
 )
 public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.Listener
 {
-	static final String VERSION = "0.5.1";
+	static final String VERSION = "0.5.2";
 	/** RuneLite's HTTP client puts its own "RuneLite/x.y.z" in front of this. */
 	static final String USER_AGENT = "DreamChasersClanPlugin/" + VERSION
 		+ " (+https://dream-chasers.cc; Discord: frederikuk)";
@@ -196,6 +202,23 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	// the last account hash digested, so a feed post doesn't hash again; client thread only
 	private long digestedHash = OwnClan.NO_ACCOUNT;
 	private String digestOfHash;
+	// officer roster sync: this session's throttle and last answer; the own rank is read with the own record
+	private volatile RosterSync roster;
+	private volatile boolean officer;
+	private volatile String rosterLine;
+	/** Ticks between closing the Members screen and reading the list (the clan-settings update can lag the close). */
+	private static final int ROSTER_READ_DELAY_TICKS = 2;
+	// the last line an answer from the site gave, shown again when a wait ends with nothing to send
+	private volatile String rosterAnswer;
+	// a close of the Members screen is read two ticks later, once the server's clan-settings update is in; client thread only
+	private int rosterDueTick = -1;
+	// a close inside the minute: the list goes by itself once the minute is up; set on the client thread
+	private volatile boolean rosterPending;
+	// verify pickup (with the roster sync setting): witness codes said in clan chat or a PM, and the 5-minute "here"
+	private volatile WitnessPickup pickup;
+	// the clan and own name the last "here" went with, so the "gone" after logout can name them
+	private volatile String hereClan;
+	private volatile String hereSender;
 
 	@Override
 	protected void startUp()
@@ -219,6 +242,8 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		}
 
 		raidStats = new RaidStats();
+		roster = new RosterSync();
+		pickup = new WitnessPickup();
 		connectFlow = new ConnectFlow(api, executor, Clock.systemUTC(), url -> safeLinks.open(url, safeLinks.site()));
 		panel.setCollapsed(config.collapsedSections());
 		panel.setConnected(config.connect());
@@ -228,7 +253,11 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		panel.setSplashOptedIn(config.splashOptedIn());
 		panel.setTilesEnabled(config.tilePacks());
 		panel.setSignedInAs(signedInName());
-		panel.setOwnClan(OwnClan.blocker(ownClan.getState()), ownClan.getRsn());
+		if (client.getGameState() != GameState.LOGGED_IN)
+		{
+			ownClan = OwnClan.Reading.LOGGED_OUT;
+		}
+		panel.setOwnClan(OwnClan.blocker(ownClan), ownClan.getRsn());
 		joinFlow = new JoinFlow(api, () -> ownClan, VERSION);
 		panel.setAllOn(EnableAll.allOn(this::featureOn));
 		// Only refreshes what is stale, and only while the panel is open. With Connect on, startUp
@@ -254,6 +283,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	@Override
 	protected void shutDown()
 	{
+		pickupGone();
 		for (ScheduledFuture<?> f : new ScheduledFuture<?>[]{tick, liveTick})
 		{
 			if (f != null)
@@ -282,6 +312,13 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		navButton = null;
 		api = null;
 		raidStats = null;
+		roster = null;
+		pickup = null;
+		officer = false;
+		rosterLine = null;
+		rosterAnswer = null;
+		rosterDueTick = -1;
+		rosterPending = false;
 		inRaid = false;
 		liveConsented = false;
 		liveOnStream = false;
@@ -299,6 +336,10 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		GameState state = event.getGameState();
 		if (state == GameState.LOGGED_IN)
 		{
+			if (ownClan.getState() == OwnClan.State.LOGGED_OUT)
+			{
+				setOwnClan(OwnClan.Reading.UNKNOWN);
+			}
 			// LOGGED_IN also ends every loading screen (teleports, region changes): those fetch nothing
 			if (!loginPending)
 			{
@@ -314,8 +355,10 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 			{
 				return;
 			}
-			setOwnClan(OwnClan.Reading.UNKNOWN);
+			setOwnClan(OwnClan.Reading.LOGGED_OUT);
 			clanCheckDue = true;
+			officer = false;
+			rosterDueTick = -1;
 			pbParser.reset();
 			trialTimer.reset();
 			clogTracker.reset();
@@ -323,6 +366,20 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 			{
 				pbSent.clear();     // maybe another account next
 				liveOnStream = false;
+				RosterSync r = roster;
+				if (r != null)
+				{
+					r.resume();     // another account may be an officer
+				}
+				pickupGone();
+				WitnessPickup p = pickup;
+				if (p != null)
+				{
+					p.resume();
+				}
+				rosterLine = null;
+				rosterAnswer = null;
+				rosterPending = false;
 			}
 		}
 	}
@@ -350,6 +407,12 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	public void onChatMessage(ChatMessage event)
 	{
 		ChatMessageType type = event.getType();
+		if (type == ChatMessageType.CLAN_CHAT || type == ChatMessageType.PRIVATECHAT)
+		{
+			pickupChat(event.getName(), event.getMessage(),
+				type == ChatMessageType.PRIVATECHAT ? WitnessPickup.Via.PM : WitnessPickup.Via.CLAN);
+			return;
+		}
 		if (type != ChatMessageType.GAMEMESSAGE && type != ChatMessageType.SPAM
 			&& type != ChatMessageType.FRIENDSCHATNOTIFICATION)
 		{
@@ -446,6 +509,8 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		raidTick();
 		trialTick();
 		backfillTick();
+		rosterTick();
+		pickupTick();
 	}
 
 	// ---- Verified join: the player's own clan record ----
@@ -457,7 +522,11 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		if (event.getClanId() == ClanID.CLAN)
 		{
 			clanCheckDue = true;
-			readOwnClan();
+			// the channel also goes at a logout or a hop: logged out, the record waits for the next login
+			if (client.getGameState() == GameState.LOGGED_IN)
+			{
+				readOwnClan();
+			}
 		}
 	}
 
@@ -492,6 +561,10 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 			clanCheckDue = false;
 		}
 		setOwnClan(reading);
+		// the own record's rank title too: only officers and up see (and use) the roster sync
+		officer = settings != null && reading.getState() == OwnClan.State.IN_CLAN
+			&& RosterSync.isOfficer(RosterSync.ownRank(settings, rsn));
+		updateRosterStatus();
 	}
 
 	private void setOwnClan(OwnClan.Reading reading)
@@ -504,7 +577,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		DreamChasersPanel panel = this.panel;
 		if (panel != null)
 		{
-			panel.setOwnClan(OwnClan.blocker(reading.getState()), reading.getRsn());
+			panel.setOwnClan(OwnClan.blocker(reading), reading.getRsn());
 		}
 	}
 
@@ -735,6 +808,249 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		});
 	}
 
+	// ---- officer roster sync ----
+
+	/**
+	 * An officer closed the clan Members screen (where ranks are changed): the
+	 * list is read two ticks later, so a rank picked just before the close is
+	 * in it. Not while the interface tree is torn down (logout, world hop).
+	 * Client thread, as every event.
+	 */
+	@Subscribe
+	public void onWidgetClosed(WidgetClosed event)
+	{
+		if (event.getGroupId() == InterfaceID.CLANS_MEMBERS && !event.isUnload()
+			&& client.getGameState() == GameState.LOGGED_IN && roster != null)
+		{
+			rosterDueTick = client.getTickCount() + ROSTER_READ_DELAY_TICKS;
+		}
+	}
+
+	/** The read after a close, and the one send a wait inside the minute leaves due. Client thread. */
+	private void rosterTick()
+	{
+		RosterSync sync = roster;
+		if (sync == null || client.getGameState() != GameState.LOGGED_IN)
+		{
+			return;
+		}
+		if (rosterDueTick >= 0 && client.getTickCount() >= rosterDueTick)
+		{
+			rosterDueTick = -1;
+			rosterPending = false;     // this read takes the waiting change along
+			sendRoster(false);
+			return;
+		}
+		Instant next = rosterPending ? sync.nextAllowed() : null;
+		if (rosterPending && (next == null || !Clock.systemUTC().instant().isBefore(next)))
+		{
+			rosterPending = false;
+			sendRoster(true);
+		}
+	}
+
+	/**
+	 * Reads the clan's member list (names and rank titles, nothing else) on the
+	 * client thread and sends it on OkHttp's. Only with Connect and the setting
+	 * on, signed in, in Dream Chasers, at an officer rank; at most once a
+	 * minute (a change inside the minute goes by itself once it is up), and
+	 * only when the list differs from the one the site last took.
+	 * {@code waited} is the send a wait left due: if it ends with nothing to
+	 * send, the line goes back to the site's last answer.
+	 */
+	private void sendRoster(boolean waited)
+	{
+		RosterSync sync = roster;
+		DrmApiClient api = this.api;
+		if (waited)
+		{
+			rosterLine = rosterAnswer;
+		}
+		if (sync == null || api == null || !config.connect() || !config.officerRosterSync() || signedInName() == null)
+		{
+			updateRosterStatus();
+			return;
+		}
+		ClanSettings settings = client.getClanSettings(ClanID.CLAN);
+		Player me = client.getLocalPlayer();
+		String own = me == null ? null : me.getName();
+		if (settings == null || own == null)
+		{
+			updateRosterStatus();
+			return;
+		}
+		String ownRank = RosterSync.ownRank(settings, own);
+		officer = OwnClan.isDreamChasers(settings.getName()) && RosterSync.isOfficer(ownRank);
+		if (!RosterSync.allowed(config.connect(), config.officerRosterSync(), true, settings.getName(), ownRank))
+		{
+			updateRosterStatus();
+			return;
+		}
+		List<RosterSync.Member> members = RosterSync.read(settings);
+		if (members.isEmpty() || members.size() > RosterSync.MAX_MEMBERS)
+		{
+			log.debug("Roster not sent: {} members", members.size());
+			rosterLine = RosterSync.notReadLine(members.size());
+			updateRosterStatus();
+			return;
+		}
+		String hash = RosterSync.hash(members);
+		RosterSync.Decision decision = sync.check(Clock.systemUTC().instant(), hash);
+		if (decision == RosterSync.Decision.TOO_SOON)
+		{
+			Instant next = sync.nextAllowed();
+			rosterPending = true;
+			rosterLine = RosterSync.waitingLine(LocalTime.ofInstant(next, ZoneId.systemDefault()),
+				sync.changedSinceLastSend(hash));
+			updateRosterStatus();
+			return;
+		}
+		if (decision != RosterSync.Decision.SEND)
+		{
+			updateRosterStatus();
+			return;
+		}
+		api.postAuthed(RosterSync.PATH, RosterSync.body(settings.getName(), Text.toJagexName(own), members), RosterResponse.class, result ->
+		{
+			RosterSync.Outcome out = sync.answered(result, hash, LocalTime.now(ZoneId.systemDefault()));
+			if (out.isForgetToken())
+			{
+				forgetToken();
+			}
+			if (result.getStatus() != ApiResult.Status.OK)
+			{
+				log.debug("Roster not taken: {}", result.getMessage());
+			}
+			rosterAnswer = out.getLine();
+			if (!rosterPending)     // a newer change waiting keeps its line until it goes
+			{
+				rosterLine = out.getLine();
+			}
+			if (out.isRetry())
+			{
+				rosterPending = true;     // the same list goes once more when the minute is up
+			}
+			updateRosterStatus();
+		});
+	}
+
+	// ---- verify pickup ----
+
+	/** Whether the pickup may run: Connect and the setting on, signed in, logged in, an officer in Dream Chasers. */
+	private boolean pickupOn()
+	{
+		return pickup != null && api != null && officer && config.connect() && config.officerRosterSync()
+			&& signedInName() != null && client.getGameState() == GameState.LOGGED_IN;
+	}
+
+	/** The 5-minute "here", so the /join page can say an officer's plugin is online. Client thread. */
+	private void pickupTick()
+	{
+		WitnessPickup p = pickup;
+		if (!pickupOn())
+		{
+			return;
+		}
+		ClanSettings settings = client.getClanSettings(ClanID.CLAN);
+		Player me = client.getLocalPlayer();
+		if (settings == null || me == null || me.getName() == null || !p.hereDue(Clock.systemUTC().instant()))
+		{
+			return;
+		}
+		hereClan = settings.getName();
+		hereSender = Text.toJagexName(me.getName());
+		api.postAuthed(WitnessPickup.PATH, WitnessPickup.hereBody(hereClan, hereSender, true), WitnessResponse.class,
+			this::pickupAnswered);
+	}
+
+	/** Logged out, the setting off or the plugin stopping: the site hears the officer has gone. */
+	private void pickupGone()
+	{
+		WitnessPickup p = pickup;
+		DrmApiClient api = this.api;
+		String clan = hereClan, sender = hereSender;
+		if (p == null || api == null || clan == null || sender == null || !p.goneDue())
+		{
+			return;
+		}
+		api.postAuthed(WitnessPickup.PATH, WitnessPickup.hereBody(clan, sender, false), WitnessResponse.class, result -> { });
+	}
+
+	/**
+	 * A clan chat line or a received PM: only when it holds a witness code do
+	 * the code and the sender's name go to the site. Client thread.
+	 */
+	private void pickupChat(String name, String message, WitnessPickup.Via via)
+	{
+		WitnessPickup p = pickup;
+		if (!pickupOn())
+		{
+			return;
+		}
+		String code = WitnessPickup.findCode(message);
+		String rsn = code == null ? null : WitnessPickup.senderName(name);
+		ClanSettings settings = client.getClanSettings(ClanID.CLAN);
+		Player me = client.getLocalPlayer();
+		if (rsn == null || settings == null || me == null || me.getName() == null)
+		{
+			return;
+		}
+		String own = Text.toJagexName(me.getName());
+		if (rsn.equalsIgnoreCase(own) || (via == WitnessPickup.Via.PM && settings.findMember(rsn) == null))
+		{
+			return;     // the officer's own line, or a PM from someone outside the clan
+		}
+		if (!p.take(Clock.systemUTC().instant(), rsn, code))
+		{
+			return;     // already sent, or over the limit
+		}
+		api.postAuthed(WitnessPickup.PATH, WitnessPickup.witnessBody(settings.getName(), own, rsn, code, via),
+			WitnessResponse.class, result ->
+			{
+				if (result.getStatus() == ApiResult.Status.ERROR)
+				{
+					p.release(rsn, code);     // no answer: the same line may go again
+				}
+				pickupAnswered(result);
+			});
+	}
+
+	private void pickupAnswered(ApiResult<WitnessResponse> result)
+	{
+		WitnessPickup p = pickup;
+		if (p == null)
+		{
+			return;
+		}
+		WitnessPickup.Outcome out = p.answered(result, LocalTime.now(ZoneId.systemDefault()));
+		if (out.isForgetToken())
+		{
+			forgetToken();
+		}
+		if (out.getLine() != null)
+		{
+			rosterAnswer = out.getLine();
+			if (!rosterPending)
+			{
+				rosterLine = out.getLine();
+			}
+			updateRosterStatus();
+		}
+	}
+
+	/** The panel's roster line: only for an officer, signed in, with Connect and the setting on. */
+	private void updateRosterStatus()
+	{
+		DreamChasersPanel panel = this.panel;
+		if (panel == null)
+		{
+			return;
+		}
+		boolean show = officer && config.connect() && config.officerRosterSync() && signedInName() != null;
+		String line = rosterLine;
+		panel.setRosterStatus(show ? (line == null ? RosterSync.idleLine() : line) : null);
+	}
+
 	// ---- collection log and big drops ----
 
 	/** True while collection log posting may run: its own toggle, plus Connect and a sign-in. */
@@ -866,6 +1182,11 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 			case DreamChasersClanConfig.CONNECT_KEY:
 				panel.setConnected(config.connect());
 				clanCheckDue = true;
+				updateRosterStatus();
+				if (!config.connect())
+				{
+					pickupGone();
+				}
 				if (!config.connect() && joinFlow != null)
 				{
 					joinFlow.cancel();
@@ -884,6 +1205,24 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 				break;
 			case DreamChasersClanConfig.SPLASH_KEY:
 				panel.setSplashEnabled(config.clanSplash());
+				break;
+			case DreamChasersClanConfig.ROSTER_KEY:
+				if (config.officerRosterSync() && roster != null)
+				{
+					roster.resume();     // a fresh tick tries again after a refusal
+					rosterLine = null;
+					rosterAnswer = null;
+				}
+				if (config.officerRosterSync() && pickup != null)
+				{
+					pickup.resume();
+				}
+				else if (!config.officerRosterSync())
+				{
+					pickupGone();
+				}
+				clanCheckDue = true;     // re-reads the own rank on the next tick
+				updateRosterStatus();
 				break;
 			case DreamChasersClanConfig.RAID_KEY:
 				if (raidStats != null)
@@ -1132,21 +1471,36 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		}
 		panel.setConnectWaiting(null, null);
 		panel.setSignedInAs(signedInName());
+		updateRosterStatus();
 		backfillDue = true;
 		api.fetch(Endpoint.EVENTS, true, panel::showEvents);
 		refreshLive(true);
 	}
 
+	/** Shown under the code once a Connect has waited 2 minutes (ConnectFlow.STILL_WAITING_AFTER). */
+	public static final String STILL_WAITING = "Still waiting for Discord? Check your browser is signed in to discord.com "
+		+ "with your main Discord account (it needs a verified email or phone). Then press Cancel and Connect again.";
+
+	/**
+	 * Pressing a join step (Join our Discord, Open dream-chasers.cc/join) or
+	 * Connect is the opt-in: it turns on the same setting as the config panel's
+	 * toggle, which stays off by default. Nothing is sent from here.
+	 */
 	@Override
-	public void connect()
+	public void optIn()
 	{
-		// Pressing Connect on the consent card is the opt-in: it turns on the
-		// same setting as the config panel's toggle, which stays off by default.
 		if (!config.connect())
 		{
 			configManager.setConfiguration(DreamChasersClanConfig.GROUP, DreamChasersClanConfig.CONNECT_KEY, true);
 		}
 		configManager.unsetConfiguration(DreamChasersClanConfig.GROUP, DreamChasersClanConfig.DISMISSED_KEY);
+	}
+
+	/** "Already verified on another PC?": the browser-approve sign-in (ConnectFlow). */
+	@Override
+	public void connect()
+	{
+		optIn();
 		DreamChasersPanel panel = this.panel;
 		if (panel != null)
 		{
@@ -1165,6 +1519,12 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 				public void waiting(String code)
 				{
 					panel.setConnectWaiting(code == null ? "…" : code, null);
+				}
+
+				@Override
+				public void stillWaiting(String code)
+				{
+					panel.setConnectWaiting(code == null ? "…" : code, STILL_WAITING);
 				}
 
 				@Override
@@ -1498,6 +1858,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	@Override
 	public void signOut()
 	{
+		pickupGone();     // while the token still works
 		// with Connect off nothing is sent; the token is only forgotten here
 		if (api != null && config.connect())
 		{
@@ -1521,7 +1882,11 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		{
 			panel.setSignedInAs(null);
 			panel.setVerifiedAs(null);
+			panel.setRosterStatus(null);
 		}
+		rosterLine = null;
+		rosterAnswer = null;
+		rosterPending = false;
 	}
 
 	/**

@@ -45,7 +45,7 @@ public class ConnectFlowTest
 		executor.shutdownNow();
 	}
 
-	private static final class Outcome implements ConnectFlow.Listener
+	private static class Outcome implements ConnectFlow.Listener
 	{
 		final List<String> codes = new ArrayList<>();
 		final CompletableFuture<String> done = new CompletableFuture<>();
@@ -159,6 +159,47 @@ public class ConnectFlowTest
 		assertTrue(o.done.get(5, TimeUnit.SECONDS).startsWith("failed No answer from the browser within 10 minutes"));
 		assertEquals("the blip, then one pending poll, then nothing after the deadline", 3, fake.requests.size());
 		assertFalse(f.isWaiting());
+	}
+
+	@Test
+	public void aLongWaitNudgesOnceThenKeepsPolling() throws Exception
+	{
+		fake.reply(200, START, null);
+		for (int i = 0; i < 400; i++)
+		{
+			fake.reply(200, PENDING, null);
+		}
+		List<String> nudges = new java.util.concurrent.CopyOnWriteArrayList<>();
+		Outcome o = new Outcome()
+		{
+			@Override
+			public void stillWaiting(String code)
+			{
+				nudges.add(code);
+			}
+		};
+		ConnectFlow f = new ConnectFlow(api, executor, clock, opened::add, Duration.ofMillis(10),
+			Duration.ofMinutes(10), Duration.ofMinutes(2));
+		f.start(null, o);
+		for (int i = 0; i < 200 && fake.requests.size() < 4; i++)
+		{
+			TimeUnit.MILLISECONDS.sleep(10);
+		}
+		assertTrue("no nudge before two minutes", nudges.isEmpty());
+		clock.advanceSeconds(121);
+		for (int i = 0; i < 200 && nudges.isEmpty(); i++)
+		{
+			TimeUnit.MILLISECONDS.sleep(10);
+		}
+		int at = fake.requests.size();
+		for (int i = 0; i < 200 && fake.requests.size() < at + 5; i++)
+		{
+			TimeUnit.MILLISECONDS.sleep(10);
+		}
+		f.cancel();
+		assertEquals("nudged once, with the panel's code", List.of("K7QX"), nudges);
+		assertTrue("still polling after the nudge", fake.requests.size() >= at + 5);
+		assertFalse(o.done.isDone());
 	}
 
 	@Test

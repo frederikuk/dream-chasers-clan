@@ -68,7 +68,7 @@ public class JoinFlowTest
 		reading.set(OwnClan.judge(true, "Other Clan", "Tadeko", true, HASH));
 		Outcome o = new Outcome();
 		flow.peek("ABCD-2345", o);
-		assertEquals("error Join the clan in game first.", o.done.get(1, TimeUnit.SECONDS));
+		assertEquals("error Your clan in game isn't DRM Chasers. Join DRM Chasers first.", o.done.get(1, TimeUnit.SECONDS));
 		assertTrue(fake.requests.isEmpty());
 	}
 
@@ -78,7 +78,7 @@ public class JoinFlowTest
 		reading.set(OwnClan.Reading.UNKNOWN);
 		Outcome o = new Outcome();
 		flow.peek("ABCD-2345", o);
-		assertEquals("error Open your clan tab or wait a few seconds after login.", o.done.get(1, TimeUnit.SECONDS));
+		assertEquals("error Join DRM Chasers in game first, or open your clan tab and wait a few seconds.", o.done.get(1, TimeUnit.SECONDS));
 		assertTrue(fake.requests.isEmpty());
 	}
 

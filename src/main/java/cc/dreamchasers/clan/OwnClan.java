@@ -38,7 +38,9 @@ public final class OwnClan
 
 	public enum State
 	{
-		/** Not read yet: logged out, or the clan record hasn't loaded. */
+		/** At the login screen (or hopping): there's no clan record to read. */
+		LOGGED_OUT,
+		/** Logged in, but no clan record yet: it hasn't loaded, or the player has no clan. */
 		UNKNOWN,
 		/** The record loaded, and it isn't Dream Chasers (or this player isn't in it). */
 		NOT_IN_CLAN,
@@ -51,6 +53,7 @@ public final class OwnClan
 	public static class Reading
 	{
 		public static final Reading UNKNOWN = new Reading(State.UNKNOWN, null, null, null);
+		public static final Reading LOGGED_OUT = new Reading(State.LOGGED_OUT, null, null, null);
 
 		State state;
 		/** The clan's name as the game gave it. */
@@ -122,16 +125,20 @@ public final class OwnClan
 	}
 
 	/** The panel's line when verifying isn't possible yet; null when it is. */
-	public static String blocker(State state)
+	public static String blocker(Reading reading)
 	{
-		switch (state)
+		switch (reading.getState())
 		{
 			case IN_CLAN:
 				return null;
+			case LOGGED_OUT:
+				return "Log in to the game to verify";
 			case NOT_IN_CLAN:
-				return "Join the clan in game first";
+				return reading.getClanName() != null && !isDreamChasers(reading.getClanName())
+					? "Your clan in game isn't DRM Chasers. Join DRM Chasers first"
+					: "Join the clan in game first";
 			default:
-				return "Open your clan tab or wait a few seconds after login";
+				return "Join DRM Chasers in game first, or open your clan tab and wait a few seconds";
 		}
 	}
 }

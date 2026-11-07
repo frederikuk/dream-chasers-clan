@@ -29,11 +29,22 @@ public class ConnectFlow
 {
 	static final Duration POLL_EVERY = Duration.ofSeconds(3);
 	static final Duration MAX_WAIT = Duration.ofMinutes(10);
+	/**
+	 * A request still pending this long gets {@link Listener#stillWaiting}: Discord
+	 * refuses some accounts on its own page (an unverified or throwaway one) and
+	 * never sends the member back, so the site can't say anything (5 Nov 2026).
+	 */
+	static final Duration STILL_WAITING_AFTER = Duration.ofMinutes(2);
 
 	public interface Listener
 	{
 		/** Waiting for the browser; {@code code} is what the site's page shows too. */
 		void waiting(String code);
+
+		/** Still pending after {@link #STILL_WAITING_AFTER}; called once per request. */
+		default void stillWaiting(String code)
+		{
+		}
 
 		void connected(String token, String name);
 
@@ -47,6 +58,7 @@ public class ConnectFlow
 	private final Predicate<String> browser;
 	private final Duration pollEvery;
 	private final Duration maxWait;
+	private final Duration stillWaitingAfter;
 
 	private Attempt current;
 
@@ -55,6 +67,8 @@ public class ConnectFlow
 		final Listener listener;
 		LinkStartResponse start;
 		Instant deadline;
+		Instant nudgeAt;
+		boolean nudged;
 		ScheduledFuture<?> next;
 		boolean inFlight;
 		boolean over;
@@ -67,11 +81,17 @@ public class ConnectFlow
 
 	public ConnectFlow(DrmApiClient api, ScheduledExecutorService executor, Clock clock, Predicate<String> browser)
 	{
-		this(api, executor, clock, browser, POLL_EVERY, MAX_WAIT);
+		this(api, executor, clock, browser, POLL_EVERY, MAX_WAIT, STILL_WAITING_AFTER);
 	}
 
 	ConnectFlow(DrmApiClient api, ScheduledExecutorService executor, Clock clock, Predicate<String> browser,
 		Duration pollEvery, Duration maxWait)
+	{
+		this(api, executor, clock, browser, pollEvery, maxWait, STILL_WAITING_AFTER);
+	}
+
+	ConnectFlow(DrmApiClient api, ScheduledExecutorService executor, Clock clock, Predicate<String> browser,
+		Duration pollEvery, Duration maxWait, Duration stillWaitingAfter)
 	{
 		this.api = api;
 		this.executor = executor;
@@ -79,6 +99,7 @@ public class ConnectFlow
 		this.browser = browser;
 		this.pollEvery = pollEvery;
 		this.maxWait = maxWait;
+		this.stillWaitingAfter = stillWaitingAfter;
 	}
 
 	/** Starts a new request, cancelling any one still waiting. {@code rsn} may be null. */
@@ -129,6 +150,7 @@ public class ConnectFlow
 		}
 		a.start = s;
 		a.deadline = clock.instant().plus(maxWait);
+		a.nudgeAt = clock.instant().plus(stillWaitingAfter);
 		a.listener.waiting(s.getCode());
 		schedule(a);
 	}
@@ -172,6 +194,11 @@ public class ConnectFlow
 			{
 				finish(a, () -> a.listener.failed("You pressed Deny in the browser, so nothing was linked."));
 				return;
+			}
+			if (!a.nudged && !clock.instant().isBefore(a.nudgeAt))
+			{
+				a.nudged = true;
+				a.listener.stillWaiting(a.start.getCode());
 			}
 			schedule(a);
 			return;

@@ -23,13 +23,15 @@ share your raid stats while you're on DRM Live, and copy the clan's tile packs.
 Every setting below that talks to dream-chasers.cc is off until you turn it on.
 RuneLite shows them in five sections: Connect, Appearance, Data, PvM and
 Livestream.
-Connect first: **Connect to dream-chasers.cc** is the first setting, and you
-sign in with the panel's **Connect** card. Once you're signed in, the panel
+Sign in first: follow the panel's **Join Dream Chasers** steps (join the
+Discord, open dream-chasers.cc/join, then **Verify for Discord**). Pressing
+step 1 or 2 turns on **Connect to dream-chasers.cc**, the first setting. Once
+you're signed in, the panel
 offers **Enable everything** (with the IP-address warning next to it), and the
 second setting does the same. It switches on Post personal bests, Post
 collection log, Clan splash, Clan tile packs, Join DRM Live and Share raid
 stats. Before you're signed in it does nothing: the setting unticks itself and
-the Connect card says why. It
+the join card says why. It
 never agrees to the DRM Live stream consent or sends your character's model;
 those stay their own buttons. Untick it to turn them all off again. Turn one
 feature off by hand and it unticks itself, leaving the others as they are;
@@ -37,10 +39,16 @@ turn all of them on by hand and it ticks itself. RuneLite's settings show these
 changes once you close and reopen them.
 
 - **Connect to dream-chasers.cc** (off by default). Nothing is fetched until you
-  turn this on, or press **Connect** on the panel's consent card (the same
+  turn this on, or press step 1 or 2 on the panel's join card (the same
   switch). As with every plugin that talks to a server outside RuneLite, this
   sends your IP address to that server (dream-chasers.cc). It also turns on
   **Verify for Discord** (below), which reads only your own clan record.
+- **Officer roster sync** (off by default, officers only). When you close the
+  clan **Members** screen in game, the plugin sends the clan's member list
+  (names and rank titles, nothing else) to dream-chasers.cc, which updates the
+  clan's Wise Old Man group. It also verifies newcomers who say their witness
+  code in clan chat or PM it to you. See Officer roster sync (below). Same
+  IP-address warning. **Enable everything** leaves it alone.
 - **Join DRM Live** (off by default). Shows the DRM Live section (below). Same
   IP-address warning.
 - **Clan splash** (off by default). Shows the **Feature me on the clan
@@ -81,13 +89,15 @@ inside RuneLite.
 The new way to link the plugin, and the way the clan's Discord gives you the
 **Verified** role. It needs **Connect to dream-chasers.cc** on (off by default,
 with the IP-address warning) and works only when your own clan record in game
-says Dream Chasers.
+says the clan's in-game name, DRM Chasers.
 
 1. On [dream-chasers.cc/join](https://dream-chasers.cc/join) press **Connect
    Discord** and sign in. The page shows an 8-character code.
 2. In the panel's **Verify for Discord** box, type the code and press **Verify**.
-   If the box is greyed out it says why: "Join the clan in game first", or
-   "Open your clan tab or wait a few seconds after login".
+   If the box is greyed out it says why: "Log in to the game to verify",
+   "Join the clan in game first", "Your clan in game isn't DRM Chasers. Join
+   DRM Chasers first", or "Join DRM Chasers in game first, or open your clan
+   tab and wait a few seconds".
 3. The panel shows "This links **your RSN** to Discord **a name**". Only
    continue if that Discord account is yours. If someone sent you the code,
    press **Cancel**.
@@ -112,10 +122,52 @@ With posting turned on, your PBs, old PBs, collection log slots and big drops
 carry the same hashed account id, so the site can tell they come from the
 account that verified.
 
+## Officer roster sync
+
+For officers (Summoner, Illusionist, Wizard, Warlock, Necromancer and up). With
+**Officer roster sync** on and the panel signed in, closing the clan
+**Members** screen (Clan settings, Members: where you rank someone up) sends
+the clan's member list to dream-chasers.cc, and the site updates the Wise Old
+Man group. A rank-up to Gnome Child reaches the site within seconds, with no
+extra button. This is the same list the Wise Old Man plugin's own group sync
+reads.
+
+- **What it sends:** each member's name and rank title, the clan's name as the
+  game shows it, and your own RSN. Never locations, gear or stats.
+- **When:** a moment after you close the Members screen, and only when the list
+  has changed since the site last took it. At most once a minute: a change
+  inside the minute is sent by itself once the minute is up, and the panel
+  says when ("Changed again: sending at 12:35"). If the site was busy or
+  couldn't be reached, the same list goes once more a minute later.
+- The panel shows one line, like "Roster sent 12:34: 2 added, 1 rank changed".
+  If the site says you're not an officer, the sync stops until you log in
+  again or tick the setting again, and the panel says why.
+
+### Verify pickup
+
+The same setting verifies newcomers for you. A member on mobile gets a witness
+code at dream-chasers.cc/join and says it in clan chat, or PMs it to you. The
+plugin sends that code and the sender's name (which the game sets, so it
+proves the account) to the site, and the site verifies them. Nobody types
+anything. The panel shows "Verified Bob 12:34", or says when a request needs
+an officer to look at it on the site (a new Discord account, a disputed name,
+an officer-rank name and a few others).
+
+- **What it reads:** clan chat and the PMs you receive. Only a line holding a
+  code (`DRM-` and six characters) leaves your PC, and a PM only from someone
+  in the clan. Every other line is ignored.
+- **What it sends:** the code, the sender's name, whether it was clan chat or
+  a PM, and your own RSN. At most 20 in 10 minutes, two codes per sender.
+- **Online dot:** while the setting is on, the plugin tells the site every 5
+  minutes that an officer's plugin is online, and that it's gone when you log
+  out or turn it off. The join page shows newcomers a green dot when saying
+  the code will work.
+
 ## How to connect (the older way)
 
 The browser-approval flow below still works while the site moves over to
-Verify for Discord.
+Verify for Discord. In the panel it sits behind **Already verified on another
+PC?**.
 
 The first time you open the panel it explains what connecting does: the site
 checks your RSN and that you're in the clan's Discord, your IP address goes to

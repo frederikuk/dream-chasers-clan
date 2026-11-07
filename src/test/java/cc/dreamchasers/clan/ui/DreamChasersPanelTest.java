@@ -92,6 +92,12 @@ public class DreamChasersPanelTest
 		}
 
 		@Override
+		public void optIn()
+		{
+			log.add("optIn");
+		}
+
+		@Override
 		public void dismissConnect()
 		{
 			log.add("dismissConnect");
@@ -264,9 +270,13 @@ public class DreamChasersPanelTest
 		flush();
 
 		String text = allText(panel);
-		assertTrue(text.contains("CONNECT TO DREAM CHASERS"));
-		assertTrue(text.contains("[Connect]") && text.contains("[Not now]") && text.contains("[Privacy]"));
-		assertTrue(text.contains("IP address") && text.contains("password"));
+		assertTrue(text.contains("JOIN DREAM CHASERS"));
+		assertTrue(text, text.contains("[Get the Discord invite]") && text.contains("[Open dream-chasers.cc/join]"));
+		assertTrue("step 1 says where the invite is before links load", text.contains("The invite is on dream-chasers.cc/join."));
+		assertTrue(text.contains("[Not now]") && text.contains("[Privacy]") && text.contains("[Already verified on another PC?]"));
+		assertTrue(text.contains("IP address") && text.contains("password") && text.contains("Step 1 or 2 turns on Connect"));
+		assertFalse("Connect waits behind its button", text.contains("[Connect]"));
+		assertFalse("Verify for Discord waits for the opt-in", text.contains("VERIFY FOR DISCORD"));
 		assertFalse(text.contains("Get a code"));
 		snapshot(panel, "disconnected");
 	}
@@ -287,12 +297,18 @@ public class DreamChasersPanelTest
 		assertTrue(text.contains("Zokairox Lam"));
 		assertTrue(text.contains("Normal + CM"));
 		assertTrue(text.contains("Recent clan firsts"));
+		assertTrue(text.contains("JOIN DREAM CHASERS"));
+		assertTrue("step 3 is the card below", text.contains("VERIFY FOR DISCORD"));
+		assertFalse("the old Connect waits behind its button", text.contains("How to connect"));
+		assertFalse(text.contains("[Have a code instead?]"));
+		snapshot(panel, "signed-out");
+		click(panel, "Already verified on another PC?");
+		text = allText(panel);
 		assertTrue(text.contains("How to connect"));
 		assertTrue(text.contains("[Connect]"));
 		assertTrue(text.contains("[Have a code instead?]"));
 		assertFalse("the code box waits behind its button", text.contains("[Link]"));
-		assertFalse("no Discord button while the site's invite is null", text.contains("Join our Discord"));
-		snapshot(panel, "signed-out");
+		snapshot(panel, "signed-out-other-pc");
 	}
 
 	@Test
@@ -326,6 +342,7 @@ public class DreamChasersPanelTest
 		Calls calls = new Calls();
 		DreamChasersPanel panel = newPanel(calls);
 		panel.setConnected(true);
+		panel.setSignedInAs("Tadeko");     // the Links section's buttons (the join card has its own step 1)
 		LinksResponse links = GSON.fromJson(read("links.json"), LinksResponse.class);
 		links.setDiscord("https://discord.gg/example");
 		panel.showLinks(new ApiResult<>(ApiResult.Status.OK, links, NOW, null));
@@ -364,6 +381,7 @@ public class DreamChasersPanelTest
 		DreamChasersPanel panel = newPanel(calls);
 		panel.setConnected(true);
 		flush();
+		click(panel, "Already verified on another PC?");
 		click(panel, "Have a code instead?");
 		assertTrue(allText(panel).contains("[Link]"));
 
@@ -390,7 +408,7 @@ public class DreamChasersPanelTest
 		flush();
 		String text = allText(panel);
 		assertTrue(text.contains("VERIFY FOR DISCORD"));
-		assertTrue("unknown at first", text.contains("Open your clan tab or wait a few seconds after login."));
+		assertTrue("logged out at first", text.contains("Log in to the game to verify."));
 		assertEquals("greyed out", null, enabledField(panel));
 
 		panel.setOwnClan("Join the clan in game first", null);
@@ -450,11 +468,11 @@ public class DreamChasersPanelTest
 		DreamChasersPanel panel = newPanel(new Calls());
 		panel.setEnableAllRefused(true);
 		flush();
-		assertTrue(allText(panel).contains("<b>Enable everything</b> needs you connected first, so it turned itself off. Press Connect, then close and reopen the settings and tick it again."));
+		assertTrue(allText(panel).contains("<b>Enable everything</b> needs you signed in first, so it turned itself off. Follow the steps below, then close and reopen the settings and tick it again."));
 		panel.setSignedInAs("Tadeko");
 		panel.setSignedInAs(null);
 		flush();
-		assertFalse("signing in clears it", allText(panel).contains("needs you connected first"));
+		assertFalse("signing in clears it", allText(panel).contains("needs you signed in first"));
 	}
 
 	@Test
@@ -575,6 +593,7 @@ public class DreamChasersPanelTest
 		Calls calls = new Calls();
 		DreamChasersPanel panel = newPanel(calls);
 		flush();
+		click(panel, "Already verified on another PC?");
 		click(panel, "Connect");
 		assertEquals("connect", calls.log.get(calls.log.size() - 1));
 		click(panel, "Not now");
@@ -585,8 +604,8 @@ public class DreamChasersPanelTest
 		String text = allText(panel);
 		assertTrue(text.contains("NOT CONNECTED"));
 		assertFalse("the card folds away", text.contains("IP address"));
-		click(panel, "Connect…");
-		assertTrue("Connect… opens the card again", allText(panel).contains("IP address"));
+		click(panel, "Join…");
+		assertTrue("Join… opens the card again", allText(panel).contains("IP address"));
 	}
 
 	@Test
@@ -600,7 +619,19 @@ public class DreamChasersPanelTest
 		String text = allText(panel);
 		assertTrue(text.contains("Waiting for you to approve in the browser"));
 		assertTrue(text.contains("K7QX"));
+		assertTrue("Verify for Discord stays while the browser wait runs", text.contains("VERIFY FOR DISCORD"));
+		assertTrue("says which Discord account up front", text.contains("use your main one"));
 		snapshot(panel, "connect-waiting");
+		// still pending after 2 minutes (ConnectFlow.STILL_WAITING_AFTER): the hint sits under the code
+		panel.setConnectWaiting("K7QX", cc.dreamchasers.clan.DreamChasersClanPlugin.STILL_WAITING);
+		flush();
+		text = allText(panel);
+		assertTrue(text.contains("K7QX") && text.contains("Still waiting for Discord?"));
+		DreamChasersPanel fresh = newPanel(new Calls());   // a fresh panel: snapshot() measures one layout, not a change
+		fresh.setConnected(true);
+		fresh.setConnectWaiting("K7QX", cc.dreamchasers.clan.DreamChasersClanPlugin.STILL_WAITING);
+		flush();
+		snapshot(fresh, "connect-still-waiting");
 		click(panel, "Cancel");
 		assertEquals("cancelConnect", calls.log.get(calls.log.size() - 1));
 
@@ -610,7 +641,64 @@ public class DreamChasersPanelTest
 
 		panel.setSignedInAs("Maho z h");
 		flush();
-		assertFalse("the card goes once signed in", allText(panel).contains("CONNECT TO DREAM CHASERS"));
+		assertFalse("the card goes once signed in", allText(panel).contains("JOIN DREAM CHASERS"));
+	}
+
+	@Test
+	public void joinStepsOptInThenOpenTheirPages() throws Exception
+	{
+		Calls calls = new Calls();
+		DreamChasersPanel panel = newPanel(calls);
+		flush();
+		// no links yet (they load once Connect is on): step 1 says so and opens the join page, which has the invite
+		assertFalse(visibleButton(panel, "Join our Discord"));
+		click(panel, "Get the Discord invite");
+		assertEquals(List.of("optIn", "open https://dream-chasers.cc/join"), calls.log.subList(calls.log.size() - 2, calls.log.size()));
+		click(panel, "Open dream-chasers.cc/join");
+		assertEquals(List.of("optIn", "open https://dream-chasers.cc/join"), calls.log.subList(calls.log.size() - 2, calls.log.size()));
+
+		panel.setConnected(true);
+		LinksResponse links = GSON.fromJson(read("links.json"), LinksResponse.class);
+		links.setDiscord("https://discord.gg/example");
+		panel.showLinks(new ApiResult<>(ApiResult.Status.OK, links, NOW, null));
+		flush();
+		String text = allText(panel);
+		assertTrue(text.contains("VERIFY FOR DISCORD"));
+		assertTrue(text, text.contains("Type the code in <b>Verify for Discord</b> below, then press Verify."));
+		assertFalse("with the invite the step needs no pointer", text.contains("The invite is on"));
+		assertFalse("the steps already say where the code comes from", visibleButton(panel, "Get a code"));
+		click(panel, "Join our Discord");
+		assertEquals(List.of("optIn", "open https://discord.gg/example"), calls.log.subList(calls.log.size() - 2, calls.log.size()));
+		snapshot(panel, "join-steps");
+	}
+
+	@Test
+	public void rosterLineShowsOnlyWhenGiven() throws Exception
+	{
+		DreamChasersPanel panel = newPanel(new Calls());
+		panel.setConnected(true);
+		panel.setSignedInAs("Tadeko");
+		flush();
+		assertFalse(allText(panel).contains("Roster"));
+		panel.setRosterStatus("Roster sent 12:34: 2 added, 1 rank changed");
+		flush();
+		assertTrue(allText(panel).contains("Roster sent 12:34: 2 added, 1 rank changed."));
+		snapshot(panel, "roster");
+		panel.setRosterStatus("Roster sync stopped: <b>Not an officer</b>");
+		flush();
+		assertTrue("site text is escaped", allText(panel).contains("Roster sync stopped: &lt;b&gt;Not an officer&lt;/b&gt;."));
+		panel.setRosterStatus("Roster sync stopped: Only officers can sync the roster. Roster sync is off until you log in again.");
+		flush();
+		String stopped = allText(panel);
+		assertTrue(stopped, stopped.contains("you log in again."));
+		assertFalse("no second full stop after the site's own", stopped.contains("again.."));
+		panel.setRosterStatus("Changed again: sending at 12:35");
+		flush();
+		assertTrue(allText(panel).contains("Changed again: sending at 12:35."));
+		snapshot(panel, "roster-waiting");
+		panel.setRosterStatus(null);
+		flush();
+		assertFalse(allText(panel).contains("Roster"));
 	}
 
 	private static final String LIVE_JSON = "{\"apiVersion\":1,\"consent\":{\"version\":\"2026-11-01\",\"title\":\"Before you go on stream\","

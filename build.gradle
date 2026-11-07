@@ -28,7 +28,7 @@ dependencies {
 }
 
 group = 'cc.dreamchasers'
-version = '0.5.1'
+version = '0.5.2'
 
 tasks.withType(JavaCompile).configureEach {
 	options.encoding = 'UTF-8'
