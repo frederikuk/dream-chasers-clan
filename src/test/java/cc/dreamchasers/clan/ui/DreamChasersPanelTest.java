@@ -104,6 +104,18 @@ public class DreamChasersPanelTest
 		}
 
 		@Override
+		public void verifyStart()
+		{
+			log.add("verifyStart");
+		}
+
+		@Override
+		public void verifyStop()
+		{
+			log.add("verifyStop");
+		}
+
+		@Override
 		public void verifyPeek(String code)
 		{
 			log.add("verifyPeek " + code);
@@ -271,7 +283,7 @@ public class DreamChasersPanelTest
 
 		String text = allText(panel);
 		assertTrue(text.contains("JOIN DREAM CHASERS"));
-		assertTrue(text, text.contains("[Get the Discord invite]") && text.contains("[Open dream-chasers.cc/join]"));
+		assertTrue(text, text.contains("[Get the Discord invite]") && text.contains("[Show Verify for Discord]"));
 		assertTrue("step 1 says where the invite is before links load", text.contains("The invite is on dream-chasers.cc/join."));
 		assertTrue(text.contains("[Not now]") && text.contains("[Privacy]") && text.contains("[Already verified on another PC?]"));
 		assertTrue(text.contains("IP address") && text.contains("password") && text.contains("Step 1 or 2 turns on Connect"));
@@ -414,12 +426,18 @@ public class DreamChasersPanelTest
 		panel.setOwnClan("Join the clan in game first", null);
 		flush();
 		assertTrue(allText(panel).contains("Join the clan in game first."));
-		assertFalse(findButton(panel, "Verify").isEnabled());
+		assertFalse(findButton(panel, "Verify in browser").isEnabled());
+		click(panel, "Verify in browser");
+		assertFalse("a greyed-out button sends nothing", calls.log.contains("verifyStart"));
+		click(panel, "Have a code from the site?");
+		assertFalse("the typed code waits for the clan record too", findButton(panel, "Verify").isEnabled());
+		click(panel, "Hide code entry");
 
 		panel.setOwnClan(null, "Tadeko");
 		flush();
 		assertFalse(allText(panel).contains("Join the clan in game first."));
-		assertTrue(findButton(panel, "Verify").isEnabled());
+		assertTrue(findButton(panel, "Verify in browser").isEnabled());
+		assertFalse("the typed code waits behind its button", visibleButton(panel, "Verify"));
 		snapshot(panel, "verify");
 	}
 
@@ -431,6 +449,8 @@ public class DreamChasersPanelTest
 		panel.setConnected(true);
 		panel.setOwnClan(null, "Tadeko");
 		flush();
+		click(panel, "Have a code from the site?");
+		assertTrue(visibleButton(panel, "Get a code"));
 		SwingUtilities.invokeAndWait(() ->
 		{
 			javax.swing.JTextField field = enabledField(panel);
@@ -460,6 +480,59 @@ public class DreamChasersPanelTest
 		click(panel, "Cancel");
 		assertEquals("verifyCancel", calls.log.get(calls.log.size() - 1));
 		assertTrue(allText(panel).contains("Cancelled. Nothing was linked."));
+	}
+
+	@Test
+	public void verifyInBrowserWaitsWithTheCodeAndCancels() throws Exception
+	{
+		Calls calls = new Calls();
+		DreamChasersPanel panel = newPanel(calls);
+		panel.setConnected(true);
+		panel.setOwnClan(null, "Tadeko");
+		flush();
+		click(panel, "Verify in browser");
+		assertEquals("verifyStart", calls.log.get(calls.log.size() - 1));
+		assertTrue(allText(panel).contains("Asking dream-chasers.cc…"));
+		assertFalse("one start at a time", findButton(panel, "Verify in browser").isEnabled());
+
+		panel.setVerifyWaiting("AB12", null);
+		flush();
+		String text = allText(panel);
+		assertTrue(text, text.contains("Waiting for you to approve in the browser. Code: <b>AB12</b>"));
+		assertFalse("no second start while waiting", visibleButton(panel, "Verify in browser"));
+		assertFalse("no code entry while waiting", visibleButton(panel, "Have a code from the site?"));
+		snapshot(panel, "verify-waiting");
+
+		panel.setVerifyWaiting("AB12", cc.dreamchasers.clan.DreamChasersClanPlugin.VERIFY_STILL_WAITING);
+		flush();
+		assertTrue(allText(panel).contains("Still waiting? Check your browser"));
+		click(panel, "Cancel");
+		assertEquals("verifyStop", calls.log.get(calls.log.size() - 1));
+		assertTrue(allText(panel).contains("Cancelled. Nothing was linked."));
+		assertTrue("ready again", findButton(panel, "Verify in browser").isEnabled());
+
+		panel.setVerifyWaiting("CD34", null);
+		panel.verifyDone("Not on the clan roster yet. Watch dream-chasers.cc/join.", false);
+		flush();
+		text = allText(panel);
+		assertFalse("the answer ends the wait", text.contains("CD34"));
+		assertTrue(text, text.contains("Not on the clan roster yet."));
+	}
+
+	@Test
+	public void verifyInBrowserWaitStaysOpenWhenSignedIn() throws Exception
+	{
+		Calls calls = new Calls();
+		DreamChasersPanel panel = newPanel(calls);
+		panel.setConnected(true);
+		panel.setSignedInAs("Tadeko");
+		panel.setOwnClan(null, "Tadeko");
+		flush();
+		click(panel, "Verify for Discord…");
+		click(panel, "Verify in browser");
+		panel.setVerifyWaiting("AB12", null);
+		flush();
+		assertTrue("a signed-in member's wait isn't folded away", allText(panel).contains("Code: <b>AB12</b>"));
 	}
 
 	@Test
@@ -654,8 +727,8 @@ public class DreamChasersPanelTest
 		assertFalse(visibleButton(panel, "Join our Discord"));
 		click(panel, "Get the Discord invite");
 		assertEquals(List.of("optIn", "open https://dream-chasers.cc/join"), calls.log.subList(calls.log.size() - 2, calls.log.size()));
-		click(panel, "Open dream-chasers.cc/join");
-		assertEquals(List.of("optIn", "open https://dream-chasers.cc/join"), calls.log.subList(calls.log.size() - 2, calls.log.size()));
+		click(panel, "Show Verify for Discord");
+		assertEquals("optIn", calls.log.get(calls.log.size() - 1));
 
 		panel.setConnected(true);
 		LinksResponse links = GSON.fromJson(read("links.json"), LinksResponse.class);
@@ -664,9 +737,10 @@ public class DreamChasersPanelTest
 		flush();
 		String text = allText(panel);
 		assertTrue(text.contains("VERIFY FOR DISCORD"));
-		assertTrue(text, text.contains("Type the code in <b>Verify for Discord</b> below, then press Verify."));
+		assertTrue(text, text.contains("Press <b>Verify in browser</b> in <b>Verify for Discord</b> below, then approve on the page it opens."));
 		assertFalse("with the invite the step needs no pointer", text.contains("The invite is on"));
-		assertFalse("the steps already say where the code comes from", visibleButton(panel, "Get a code"));
+		assertFalse("the box below has the button now", visibleButton(panel, "Show Verify for Discord"));
+		assertFalse("the typed code waits behind its button", visibleButton(panel, "Get a code"));
 		click(panel, "Join our Discord");
 		assertEquals(List.of("optIn", "open https://discord.gg/example"), calls.log.subList(calls.log.size() - 2, calls.log.size()));
 		snapshot(panel, "join-steps");

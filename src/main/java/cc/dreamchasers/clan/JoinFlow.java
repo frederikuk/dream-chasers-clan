@@ -22,16 +22,20 @@ import java.util.function.Supplier;
  */
 public class JoinFlow
 {
-	public interface Listener
+	/** How a verify ends; shared with {@link VerifyFlow}, whose poll answers in the attest shape. */
+	public interface Outcome
 	{
-		/** Peek worked: ask the member to confirm this RSN and Discord name. */
-		void confirm(String rsn, String discordName);
-
 		/** Linked: store {@code token} as the sign-in, exactly like Connect. */
 		void verified(String token, String name, String message);
 
 		/** Over without a token; {@code isError} false for awaiting-roster and held answers. */
 		void finished(String message, boolean isError);
+	}
+
+	public interface Listener extends Outcome
+	{
+		/** Peek worked: ask the member to confirm this RSN and Discord name. */
+		void confirm(String rsn, String discordName);
 	}
 
 	private final DrmApiClient api;
@@ -139,29 +143,42 @@ public class JoinFlow
 			a.listener.finished(message(result.getMessage(), "That didn't work. Get a new code at dream-chasers.cc/join."), true);
 			return;
 		}
+		tell(r, a.reading.getRsn(), a.listener, "");
+	}
+
+	/**
+	 * What an attest-shaped answer means: a token with the "Verified" line, or
+	 * the site's awaiting-roster or held message. {@code rsn} stands in when the
+	 * answer names none. The line names the Discord account the site linked,
+	 * when it says; {@code after} follows the verified line.
+	 */
+	static void tell(JoinAttestResponse r, String rsn, Outcome outcome, String after)
+	{
 		if (JoinAttestResponse.VERIFIED.equals(r.getStatus()) && r.getToken() != null && !r.getToken().isEmpty())
 		{
-			String rsn = r.getRsn() == null ? a.reading.getRsn() : r.getRsn();
+			String name = r.getRsn() == null ? rsn : r.getRsn();
+			String discord = r.getDiscordName() == null || r.getDiscordName().trim().isEmpty() ? "your Discord"
+				: "the Discord account " + r.getDiscordName().trim();
 			String moved = r.getRenamedFrom() == null || r.getRenamedFrom().isEmpty() ? ""
-				: " Your link moved from " + r.getRenamedFrom() + " to " + rsn + ".";
-			a.listener.verified(r.getToken(), r.getName(), "Verified: " + rsn + " is linked to your Discord."
-				+ moved + " Your Discord role arrives within about a minute once you're in the Dream Chasers Discord.");
+				: " Your link moved from " + r.getRenamedFrom() + " to " + name + ".";
+			outcome.verified(r.getToken(), r.getName(), "Verified: " + name + " is linked to " + discord + "."
+				+ moved + " Your Discord role arrives within about a minute once you're in the Dream Chasers Discord." + after);
 			return;
 		}
 		if (JoinAttestResponse.AWAITING_ROSTER.equals(r.getStatus()))
 		{
-			a.listener.finished(message(r.getMessage(), "Your name isn't on the clan roster yet. Watch dream-chasers.cc/join."), false);
+			outcome.finished(message(r.getMessage(), "Your name isn't on the clan roster yet. Watch dream-chasers.cc/join."), false);
 			return;
 		}
 		if (JoinAttestResponse.HELD.equals(r.getStatus()))
 		{
-			a.listener.finished(message(r.getMessage(), "An officer has to check this one. Open dream-chasers.cc/join for your witness code."), false);
+			outcome.finished(message(r.getMessage(), "An officer has to check this one. Open dream-chasers.cc/join for your witness code."), false);
 			return;
 		}
-		a.listener.finished("The site sent something unexpected", true);
+		outcome.finished("The site sent something unexpected", true);
 	}
 
-	private static String message(String m, String fallback)
+	static String message(String m, String fallback)
 	{
 		return m == null || m.trim().isEmpty() ? fallback : m;
 	}

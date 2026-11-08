@@ -160,6 +160,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	private ScheduledFuture<?> liveTick;
 	private ConnectFlow connectFlow;
 	private JoinFlow joinFlow;
+	private VerifyFlow verifyFlow;
 	// clan splash: the site enforces the upload limit too
 	private volatile Instant lastModelUpload;
 	private volatile String splashImageUrl;
@@ -259,6 +260,8 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		}
 		panel.setOwnClan(OwnClan.blocker(ownClan), ownClan.getRsn());
 		joinFlow = new JoinFlow(api, () -> ownClan, VERSION);
+		verifyFlow = new VerifyFlow(api, executor, Clock.systemUTC(), url -> safeLinks.open(url, safeLinks.site()),
+			() -> ownClan, VERSION);
 		panel.setAllOn(EnableAll.allOn(this::featureOn));
 		// Only refreshes what is stale, and only while the panel is open. With Connect on, startUp
 		// and turning Connect on fetch once, and a login with collection log posting on fetches
@@ -302,6 +305,11 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		{
 			joinFlow.cancel();
 			joinFlow = null;
+		}
+		if (verifyFlow != null)
+		{
+			verifyFlow.cancel();
+			verifyFlow = null;
 		}
 		clientToolbar.removeNavigation(navButton);
 		if (panel != null)
@@ -1187,9 +1195,16 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 				{
 					pickupGone();
 				}
-				if (!config.connect() && joinFlow != null)
+				if (!config.connect() && (joinFlow != null || verifyFlow != null))
 				{
-					joinFlow.cancel();
+					if (joinFlow != null)
+					{
+						joinFlow.cancel();
+					}
+					if (verifyFlow != null)
+					{
+						verifyFlow.cancel();
+					}
 					panel.verifyDone(null, false);
 				}
 				if (!config.connect() && connectFlow != null)
@@ -1482,7 +1497,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		+ "with your main Discord account (it needs a verified email or phone). Then press Cancel and Connect again.";
 
 	/**
-	 * Pressing a join step (Join our Discord, Open dream-chasers.cc/join) or
+	 * Pressing a join step (Join our Discord, Show Verify for Discord) or
 	 * Connect is the opt-in: it turns on the same setting as the config panel's
 	 * toggle, which stays off by default. Nothing is sent from here.
 	 */
@@ -1567,6 +1582,71 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 
 	// ---- Verify for Discord (verified join) ----
 
+	/** Shown under the code once Verify in browser has waited 2 minutes (ConnectFlow.STILL_WAITING_AFTER). */
+	public static final String VERIFY_STILL_WAITING = "Still waiting? Check your browser is signed in to discord.com "
+		+ "with your main Discord account (it needs a verified email or phone). Then press Cancel and Verify in browser again.";
+
+	/** "Verify in browser": the one-click verify (VerifyFlow). The typed code stays behind "Have a code from the site?". */
+	@Override
+	public void verifyStart()
+	{
+		VerifyFlow flow = verifyFlow;
+		DreamChasersPanel panel = this.panel;
+		if (flow == null || panel == null)
+		{
+			return;
+		}
+		if (!config.connect())
+		{
+			panel.verifyDone("Turn on Connect to dream-chasers.cc in the plugin settings first", true);
+			return;
+		}
+		if (joinFlow != null)
+		{
+			joinFlow.cancel();
+		}
+		flow.start(new VerifyFlow.Listener()
+		{
+			@Override
+			public void waiting(String code)
+			{
+				panel.setVerifyWaiting(code == null ? "…" : code, null);
+			}
+
+			@Override
+			public void stillWaiting(String code)
+			{
+				panel.setVerifyWaiting(code == null ? "…" : code, VERIFY_STILL_WAITING);
+			}
+
+			@Override
+			public void verified(String token, String name, String message)
+			{
+				panel.verifyDone(message, false);
+				signedIn(token, name);
+				List<String> v = new ArrayList<>(verifiedNames);
+				v.add(name);
+				verifiedNames = v;
+			}
+
+			@Override
+			public void finished(String message, boolean isError)
+			{
+				panel.verifyDone(message, isError);
+			}
+		});
+	}
+
+	@Override
+	public void verifyStop()
+	{
+		VerifyFlow flow = verifyFlow;
+		if (flow != null)
+		{
+			flow.cancel();
+		}
+	}
+
 	@Override
 	public void verifyPeek(String code)
 	{
@@ -1580,6 +1660,10 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		{
 			panel.verifyDone("Turn on Connect to dream-chasers.cc in the plugin settings first", true);
 			return;
+		}
+		if (verifyFlow != null)
+		{
+			verifyFlow.cancel();
 		}
 		flow.peek(code, new JoinFlow.Listener()
 		{

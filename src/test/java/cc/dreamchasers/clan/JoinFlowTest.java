@@ -99,7 +99,8 @@ public class JoinFlowTest
 
 		flow.confirm();
 		String done = o.done.get(5, TimeUnit.SECONDS);
-		assertTrue(done, done.startsWith("verified drm_pt_abc Tadeko | Verified: Tadeko is linked to your Discord."));
+		assertTrue(done, done.startsWith("verified drm_pt_abc Tadeko | Verified: Tadeko is linked to the Discord account Maho."));
+		assertTrue("the typed path showed the name at Confirm: no extra warning", !done.contains("Not your Discord"));
 
 		FakeHttp.Recorded attest = fake.requests.get(1);
 		assertEquals("https://x/api/join/attest", attest.request.url().toString());

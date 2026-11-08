@@ -24,7 +24,7 @@ Every setting below that talks to dream-chasers.cc is off until you turn it on.
 RuneLite shows them in five sections: Connect, Appearance, Data, PvM and
 Livestream.
 Sign in first: follow the panel's **Join Dream Chasers** steps (join the
-Discord, open dream-chasers.cc/join, then **Verify for Discord**). Pressing
+Discord, then **Verify in browser** in **Verify for Discord**). Pressing
 step 1 or 2 turns on **Connect to dream-chasers.cc**, the first setting. Once
 you're signed in, the panel
 offers **Enable everything** (with the IP-address warning next to it), and the
@@ -91,20 +91,25 @@ The new way to link the plugin, and the way the clan's Discord gives you the
 with the IP-address warning) and works only when your own clan record in game
 says the clan's in-game name, DRM Chasers.
 
-1. On [dream-chasers.cc/join](https://dream-chasers.cc/join) press **Connect
-   Discord** and sign in. The page shows an 8-character code.
-2. In the panel's **Verify for Discord** box, type the code and press **Verify**.
-   If the box is greyed out it says why: "Log in to the game to verify",
-   "Join the clan in game first", "Your clan in game isn't DRM Chasers. Join
-   DRM Chasers first", or "Join DRM Chasers in game first, or open your clan
-   tab and wait a few seconds".
-3. The panel shows "This links **your RSN** to Discord **a name**". Only
-   continue if that Discord account is yours. If someone sent you the code,
-   press **Cancel**.
-4. Press **Confirm**. The plugin is signed in (no browser needed), and the
-   Verified role arrives in Discord within about a minute once you're in the
-   server. If your name isn't on the clan roster yet, or an officer has to
-   check, the panel says so and dream-chasers.cc/join tells you what's next.
+1. In the panel's **Verify for Discord** box press **Verify in browser**.
+   If the button is greyed out the box says why: "Log in to the game to
+   verify", "Join the clan in game first", "Your clan in game isn't DRM
+   Chasers. Join DRM Chasers first", or "Join DRM Chasers in game first, or
+   open your clan tab and wait a few seconds".
+2. Your browser opens a dream-chasers.cc page (sign in with Discord if it
+   asks). It says "Link game account **your RSN** (DRM Chasers) to your
+   Discord **a name**?". Only press **Approve** if you pressed Verify in your
+   own RuneLite just now; if someone sent you the link, press **Deny**. On a
+   different network from the PC the page also asks for the 4-character code
+   the panel shows.
+3. The panel picks up the answer by itself: it is signed in, and the Verified
+   role arrives in Discord within about a minute once you're in the server.
+   If your name isn't on the clan roster yet, or an officer has to check, the
+   panel says so and dream-chasers.cc/join tells you what's next.
+
+Have a code from dream-chasers.cc/join instead? **Have a code from the site?**
+under the button opens the code field: type it, press **Verify**, check the
+Discord name the panel shows, then **Confirm**.
 
 Already signed in? **Verify for Discord…** is folded at the top of the panel;
 run it once to get the Verified role and protect your name.

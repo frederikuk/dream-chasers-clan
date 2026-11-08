@@ -483,11 +483,127 @@ public class DrmApiClient
 		send(request, JoinAttestResponse.class, callback);
 	}
 
+	/**
+	 * Verify in browser: asks the site for a pending verify that the member
+	 * approves on the page at {@code url}. Sends exactly what an attest sends,
+	 * less the code: the RSN, the account digest (never the raw account hash),
+	 * the clan name as the game gave it, the plugin version and the device
+	 * label. A relative {@code url} comes back resolved against the API's host.
+	 */
+	public void joinStart(String rsn, String digest, String clanName, String pluginVersion,
+		Consumer<ApiResult<LinkStartResponse>> callback)
+	{
+		if (rsn == null || digest == null || clanName == null)
+		{
+			callback.accept(new ApiResult<>(ApiResult.Status.ERROR, null, null, "Log in to the game to verify"));
+			return;
+		}
+		JsonObject payload = new JsonObject();
+		payload.addProperty("rsn", rsn);
+		payload.addProperty("digest", digest);
+		payload.addProperty("clanName", clanName);
+		payload.addProperty("pluginVersion", pluginVersion);
+		payload.addProperty("device", "RuneLite");
+		Request.Builder request = joinRequest("/api/join/start", payload);
+		if (request == null)
+		{
+			callback.accept(new ApiResult<>(ApiResult.Status.ERROR, null, null, "The site address isn't right"));
+			return;
+		}
+		send(request, LinkStartResponse.class, result ->
+		{
+			LinkStartResponse s = result.getValue();
+			if (s != null && s.getUrl() != null)
+			{
+				s.setUrl(siteUrl(s.getUrl()));
+			}
+			callback.accept(result);
+		});
+	}
+
+	/**
+	 * One poll of a Verify in browser request: {@code pending}, {@code denied},
+	 * or the attest-shaped outcome (a token at most once). 404 means the request
+	 * has expired, 409 that its answer was already collected, 429 and 5xx that
+	 * the site wants the next poll later (keep polling).
+	 */
+	public void joinPoll(LinkStartResponse start, Consumer<ApiResult<JoinAttestResponse>> callback)
+	{
+		HttpUrl url = joinUrl("/api/join/poll");
+		if (url == null || start.getRequest() == null || start.getPollKey() == null)
+		{
+			callback.accept(new ApiResult<>(ApiResult.Status.ERROR, null, null, "The site address isn't right"));
+			return;
+		}
+		send(new Request.Builder()
+			.url(url.newBuilder().addQueryParameter("req", start.getRequest()).build())
+			.header("User-Agent", userAgent)
+			.header("Accept", "application/json")
+			.header("Authorization", "Poll " + start.getPollKey())
+			.get(), JoinAttestResponse.class, callback);
+	}
+
+	/**
+	 * Gives up a Verify in browser request (Cancel, shutdown, Connect off, a
+	 * changed account): the site then refuses its Approve and its collect, and
+	 * drops a token already handed over for it. One request, sent even while
+	 * the poll route is backing off, so a blip just before Cancel can't leave
+	 * the request open. {@code done} hears true when the site answered 200 or
+	 * 404 (nothing left to approve), false otherwise.
+	 */
+	public void joinCancel(LinkStartResponse start, Consumer<Boolean> done)
+	{
+		HttpUrl url = joinUrl("/api/join/poll");
+		if (url == null || start == null || start.getRequest() == null || start.getPollKey() == null)
+		{
+			done.accept(false);
+			return;
+		}
+		Request request = new Request.Builder()
+			.url(url.newBuilder().addQueryParameter("req", start.getRequest()).build())
+			.header("User-Agent", userAgent)
+			.header("Accept", "application/json")
+			.header("Authorization", "Poll " + start.getPollKey())
+			.delete()
+			.build();
+		http.newCall(request).enqueue(new Callback()
+		{
+			@Override
+			public void onFailure(Call call, IOException e)
+			{
+				log.debug("DRM API join cancel failed", e);
+				done.accept(false);
+			}
+
+			@Override
+			public void onResponse(Call call, Response response)
+			{
+				try (ResponseBody ignored = response.body())
+				{
+					done.accept(response.code() == 200 || response.code() == 404);
+				}
+			}
+		});
+	}
+
+	/** {@code url} resolved against the API's host; null when it can't be read. Absolute links stay as they are. */
+	String siteUrl(String url)
+	{
+		HttpUrl base = HttpUrl.parse(baseUrl);
+		HttpUrl resolved = base == null || url == null ? null : base.resolve(url);
+		return resolved == null ? null : resolved.toString();
+	}
+
+	private HttpUrl joinUrl(String absolutePath)
+	{
+		HttpUrl base = HttpUrl.parse(baseUrl);
+		return base == null ? null : base.resolve(absolutePath);
+	}
+
 	/** A POST to a join route: an absolute path on the API's own host (the join routes aren't under /api/v1). */
 	private Request.Builder joinRequest(String absolutePath, JsonObject payload)
 	{
-		HttpUrl base = HttpUrl.parse(baseUrl);
-		HttpUrl url = base == null ? null : base.resolve(absolutePath);
+		HttpUrl url = joinUrl(absolutePath);
 		if (url == null)
 		{
 			return null;

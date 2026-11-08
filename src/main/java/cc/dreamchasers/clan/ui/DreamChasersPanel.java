@@ -109,7 +109,7 @@ public class DreamChasersPanel extends PluginPanel
 		/** "Already verified on another PC?" then Connect: opt in, then approve in the browser. */
 		void connect();
 
-		/** A join step (Join our Discord, Open dream-chasers.cc/join) was pressed: that is the opt-in to Connect. */
+		/** A join step (Join our Discord, Show Verify for Discord) was pressed: that is the opt-in to Connect. */
 		default void optIn()
 		{
 		}
@@ -118,6 +118,16 @@ public class DreamChasersPanel extends PluginPanel
 
 		/** "Not now" on the consent card. */
 		void dismissConnect();
+
+		/** Verify for Discord: "Verify in browser", the one-click verify. */
+		default void verifyStart()
+		{
+		}
+
+		/** Verify for Discord: Cancel while Verify in browser waits; no more polls are sent. */
+		default void verifyStop()
+		{
+		}
 
 		/** Verify for Discord: the member typed a join code from dream-chasers.cc/join. */
 		default void verifyPeek(String code)
@@ -219,6 +229,11 @@ public class DreamChasersPanel extends PluginPanel
 	private String verifyDiscordName;
 	private String verifyMessage;
 	private boolean verifyMessageIsError;
+	/** Verify in browser is waiting: the code the site's page shows too; null when not waiting. */
+	private String verifyWaitCode;
+	private String verifyWaitHint;
+	/** "Have a code from the site?" is open: the typed-code fallback. */
+	private boolean verifyCodeEntry;
 	// DRM Live
 	private boolean liveEnabled;
 	private ApiResult<LiveResponse> liveResult;
@@ -457,12 +472,26 @@ public class DreamChasersPanel extends PluginPanel
 		});
 	}
 
+	/** Verify in browser is waiting for the member's answer; {@code hint} (or null) goes under the code. */
+	public void setVerifyWaiting(String code, String hint)
+	{
+		onEdt(() ->
+		{
+			verifyBusy = false;
+			verifyWaitCode = code;
+			verifyWaitHint = hint;
+			verifyMessage = null;
+			renderVerify();
+		});
+	}
+
 	/** Peek worked: show whose Discord the code belongs to, with Confirm and Cancel. */
 	public void verifyAsk(String rsn, String discordName)
 	{
 		onEdt(() ->
 		{
 			verifyBusy = false;
+			verifyWaitCode = null;
 			verifyRsn = rsn;
 			verifyDiscordName = discordName;
 			verifyMessage = null;
@@ -568,6 +597,8 @@ public class DreamChasersPanel extends PluginPanel
 		onEdt(() ->
 		{
 			verifyBusy = false;
+			verifyWaitCode = null;
+			verifyWaitHint = null;
 			verifyDiscordName = null;
 			verifyMessage = message;
 			verifyMessageIsError = isError;
@@ -830,10 +861,10 @@ public class DreamChasersPanel extends PluginPanel
 	}
 
 	/**
-	 * The join card, for anyone not signed in: one path, each step its own
-	 * button. 1 Join our Discord, 2 Open dream-chasers.cc/join, 3 Verify for
-	 * Discord (its own card, under this one). Pressing step 1 or 2 is the
-	 * opt-in: it turns Connect on. The browser-approve sign-in waits behind
+	 * The join card, for anyone not signed in: one path. 1 Join our Discord,
+	 * 2 Verify in browser in Verify for Discord (its own card, under this one;
+	 * before the opt-in, "Show Verify for Discord" brings it up). Pressing step
+	 * 1 or 2 is the opt-in: it turns Connect on. The browser-approve sign-in waits behind
 	 * "Already verified on another PC?". Hidden once signed in.
 	 */
 	private void renderAccount()
@@ -915,12 +946,14 @@ public class DreamChasersPanel extends PluginPanel
 		JPanel step1 = row();
 		step1.add(primary(invite ? "Join our Discord" : "Get the Discord invite", this::joinDiscord));
 		account.add(step1);
-		account.add(text("<b>2.</b> On dream-chasers.cc/join press <b>Connect Discord</b>. It shows a code.", Brand.TEXT));
-		JPanel step2 = row();
-		step2.add(primary("Open dream-chasers.cc/join", this::openJoin));
-		account.add(step2);
-		account.add(text("<b>3.</b> Type the code in <b>Verify for Discord</b> "
-			+ (connected ? "below" : "(it appears below after step 1 or 2)") + ", then press Verify.", Brand.TEXT));
+		account.add(text("<b>2.</b> Press <b>Verify in browser</b> in <b>Verify for Discord</b> "
+			+ (connected ? "below" : "(it appears below after step 1 or 2)") + ", then approve on the page it opens.", Brand.TEXT));
+		if (!connected)
+		{
+			JPanel step2 = row();
+			step2.add(primary("Show Verify for Discord", listener::optIn));
+			account.add(step2);
+		}
 		if (!connected)
 		{
 			JPanel b = row();
@@ -994,13 +1027,6 @@ public class DreamChasersPanel extends PluginPanel
 		return l != null && notBlank(l.getDiscord()) ? l.getDiscord() : null;
 	}
 
-	/** Step 2. */
-	private void openJoin()
-	{
-		listener.optIn();
-		openJoinPage();
-	}
-
 	private void openJoinPage()
 	{
 		go(linkOr(LinksResponse::getSite, SITE) + "/join", safeLinks.site());
@@ -1022,15 +1048,17 @@ public class DreamChasersPanel extends PluginPanel
 	}
 
 	/**
-	 * Verify for Discord (verified join): the member types the code from
-	 * dream-chasers.cc/join. Only while Connect is on; usable only when the
-	 * player's own clan record says Dream Chasers. Signed-in members see it
-	 * folded behind one button (it also gives them the Verified role).
+	 * Verify for Discord (verified join): one click on Verify in browser, then
+	 * approve on the site's page; the code from dream-chasers.cc/join stays
+	 * behind "Have a code from the site?". Only while Connect is on; usable only
+	 * when the player's own clan record says Dream Chasers. Signed-in members
+	 * see it folded behind one button (it also gives them the Verified role).
 	 */
 	private void renderVerify()
 	{
 		verify.removeAll();
-		boolean folded = signedInAs != null && !verifyOpen && verifyDiscordName == null && !verifyBusy && verifyMessage == null;
+		boolean folded = signedInAs != null && !verifyOpen && verifyDiscordName == null && !verifyBusy && verifyMessage == null
+			&& verifyWaitCode == null;
 		boolean show = connected;     // with Connect on, also while the browser-approve sign-in waits
 		verify.setVisible(show);
 		if (!show)
@@ -1038,7 +1066,7 @@ public class DreamChasersPanel extends PluginPanel
 			done(verify);
 			return;
 		}
-		if (verifiedAs != null && !verifyOpen && !verifyBusy && verifyDiscordName == null && verifyMessage == null)
+		if (verifiedAs != null && !verifyOpen && !verifyBusy && verifyDiscordName == null && verifyMessage == null && verifyWaitCode == null)
 		{
 			verify.add(text("Verified as <b>" + esc(verifiedAs) + "</b>.", Brand.MUTED));
 			done(verify);
@@ -1088,22 +1116,85 @@ public class DreamChasersPanel extends PluginPanel
 			done(verify);
 			return;
 		}
-		if (signedInAs != null)
+		if (verifyWaitCode != null)
 		{
-			verify.add(text("On dream-chasers.cc/join press <b>Connect Discord</b>, then type the code it shows here.", Brand.MUTED));
-			JPanel getCode = row();
-			getCode.add(button("Get a code", this::openJoinPage));
-			verify.add(getCode);
-		}
-		else
-		{
-			verify.add(text("Type the code from dream-chasers.cc/join here.", Brand.MUTED));
+			verify.add(text("Waiting for you to approve in the browser. Code: <b>" + esc(verifyWaitCode) + "</b>", Brand.TEXT));
+			verify.add(text("The page asks for this code if you open it on another network.", Brand.MUTED));
+			if (verifyWaitHint != null)
+			{
+				verify.add(text(esc(verifyWaitHint), Brand.WARN));
+			}
+			JPanel b = row();
+			b.add(button("Cancel", () ->
+			{
+				verifyWaitCode = null;
+				verifyWaitHint = null;
+				verifyMessage = "Cancelled. Nothing was linked.";
+				verifyMessageIsError = false;
+				renderVerify();
+				listener.verifyStop();
+			}));
+			verify.add(b);
+			done(verify);
+			return;
 		}
 		boolean ready = verifyBlocker == null;
+		verify.add(text("Press <b>Verify in browser</b> and approve on the page it opens. It links this game account to your Discord.", Brand.MUTED));
 		if (!ready)
 		{
 			verify.add(text(esc(verifyBlocker) + ".", Brand.WARN));
 		}
+		JPanel main = row();
+		JButton start = primary("Verify in browser", () ->
+		{
+			if (verifyBusy || verifyBlocker != null)
+			{
+				return;
+			}
+			verifyBusy = true;
+			verifyMessage = "Asking dream-chasers.cc…";
+			verifyMessageIsError = false;
+			renderVerify();
+			listener.verifyStart();
+		});
+		start.setEnabled(ready && !verifyBusy);
+		main.add(start);
+		if (signedInAs != null && !verifyBusy)
+		{
+			main.add(button("Hide", () -> onEdt(() ->
+			{
+				verifyOpen = false;
+				verifyCodeEntry = false;
+				verifyMessage = null;
+				renderVerify();
+			})));
+		}
+		verify.add(main);
+		JPanel more = row();
+		more.add(button(verifyCodeEntry ? "Hide code entry" : "Have a code from the site?", () -> onEdt(() ->
+		{
+			verifyCodeEntry = !verifyCodeEntry;
+			renderVerify();
+		})));
+		verify.add(more);
+		if (verifyCodeEntry)
+		{
+			renderVerifyCode(ready);
+		}
+		if (verifyMessage != null)
+		{
+			verify.add(text(esc(verifyMessage), verifyMessageIsError ? Brand.WARN : verifyBusy ? Brand.MUTED : Brand.TEXT));
+		}
+		done(verify);
+	}
+
+	/** The typed-code fallback: the code from dream-chasers.cc/join, peeked, then confirmed. */
+	private void renderVerifyCode(boolean ready)
+	{
+		verify.add(text("On dream-chasers.cc/join press <b>Connect Discord</b>, then type the code it shows here.", Brand.MUTED));
+		JPanel getCode = row();
+		getCode.add(button("Get a code", this::openJoinPage));
+		verify.add(getCode);
 		JTextField code = new JTextField();
 		code.setToolTipText("The 8-character code from dream-chasers.cc/join, like ABCD-2345");
 		code.setMaximumSize(new Dimension(Integer.MAX_VALUE, 26));
@@ -1128,21 +1219,7 @@ public class DreamChasersPanel extends PluginPanel
 		JButton go = button("Verify", submit);
 		go.setEnabled(ready && !verifyBusy);
 		b.add(go);
-		if (signedInAs != null && !verifyBusy)
-		{
-			b.add(button("Hide", () -> onEdt(() ->
-			{
-				verifyOpen = false;
-				verifyMessage = null;
-				renderVerify();
-			})));
-		}
 		verify.add(b);
-		if (verifyMessage != null)
-		{
-			verify.add(text(esc(verifyMessage), verifyMessageIsError ? Brand.WARN : verifyBusy ? Brand.MUTED : Brand.TEXT));
-		}
-		done(verify);
 	}
 
 	/**

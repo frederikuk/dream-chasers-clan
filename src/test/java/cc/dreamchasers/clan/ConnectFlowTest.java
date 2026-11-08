@@ -157,7 +157,7 @@ public class ConnectFlowTest
 		ConnectFlow f = new ConnectFlow(api, executor, jumping, opened::add, Duration.ofMillis(10), Duration.ofMinutes(10));
 		f.start(null, o);
 		assertTrue(o.done.get(5, TimeUnit.SECONDS).startsWith("failed No answer from the browser within 10 minutes"));
-		assertEquals("the blip, then one pending poll, then nothing after the deadline", 3, fake.requests.size());
+		assertEquals("the blip, one pending poll, then one last poll past the deadline", 4, fake.requests.size());
 		assertFalse(f.isWaiting());
 	}
 
