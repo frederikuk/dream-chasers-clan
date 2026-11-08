@@ -342,10 +342,37 @@ public class DreamChasersPanelTest
 		assertTrue(text.contains("Mass Zulrah &lt;b&gt;&amp;&lt;/b&gt;"));
 		assertTrue(text.contains("Mon 2 Nov, 19:00 · in 2h"));
 		assertTrue(text.contains("Wildy Wednesday"));
-		assertTrue(text.contains("Signed in as Maho z h"));
 		assertTrue(text.contains("Starts in"));
-		assertTrue(text.contains("[Join our Discord]"));
+		assertFalse("the website link section is gone: the wordmark is the link", text.contains("[dream-chasers.cc]"));
+		assertFalse("no Links section", text.contains("DREAM CHASERS\n"));
+		assertEquals("signed-in members keep the server invite, in the player menu",
+			List.of("Connected as Maho z h", "Join our Discord", "Open dream-chasers.cc", "Sign out"), menuLabels(panel));
 		snapshot(panel, "signed-in");
+	}
+
+	@Test
+	public void thePlayerMenuOffersTheDiscordInviteOnceKnownAndChecksIt() throws Exception
+	{
+		Calls calls = new Calls();
+		DreamChasersPanel panel = newPanel(calls);
+		panel.setConnected(true);
+		panel.setSignedInAs("Maho z h");
+		flush();
+		assertFalse("no invite before /links", menuLabels(panel).contains("Join our Discord"));
+		LinksResponse links = GSON.fromJson(read("links.json"), LinksResponse.class);
+		links.setDiscord("https://discord.gg/example");
+		panel.showLinks(new ApiResult<>(ApiResult.Status.OK, links, NOW, null));
+		flush();
+		clickMenu(panel, "Join our Discord");
+		assertEquals("open https://discord.gg/example", calls.log.get(calls.log.size() - 1));
+
+		links.setDiscord("https://discord.gg.evil.example/login");
+		panel.showLinks(new ApiResult<>(ApiResult.Status.OK, links, NOW, null));
+		flush();
+		int before = calls.log.size();
+		clickMenu(panel, "Join our Discord");
+		assertEquals("an outside page never opens", before, calls.log.size());
+		assertTrue(allText(panel).contains("didn't look right"));
 	}
 
 	@Test
@@ -353,25 +380,197 @@ public class DreamChasersPanelTest
 	{
 		Calls calls = new Calls();
 		DreamChasersPanel panel = newPanel(calls);
-		panel.setConnected(true);
-		panel.setSignedInAs("Tadeko");     // the Links section's buttons (the join card has its own step 1)
+		panel.setConnected(true);     // not signed in: the join card's step 1 has the invite
 		LinksResponse links = GSON.fromJson(read("links.json"), LinksResponse.class);
 		links.setDiscord("https://discord.gg/example");
 		panel.showLinks(new ApiResult<>(ApiResult.Status.OK, links, NOW, null));
 		flush();
 		click(panel, "Join our Discord");
 		assertEquals("open https://discord.gg/example", calls.log.get(calls.log.size() - 1));
-		click(panel, "dream-chasers.cc");
+		clickNamed(panel, "wordmark");
 		assertEquals("open https://dream-chasers.cc/", calls.log.get(calls.log.size() - 1));    // the checked form goes to the browser
 
 		// a site bug hands over an outside page: nothing opens, and the panel says so
 		links.setDiscord("https://discord.gg.evil.example/login");
 		panel.showLinks(new ApiResult<>(ApiResult.Status.OK, links, NOW, null));
 		flush();
-		int before = calls.log.size();
 		click(panel, "Join our Discord");
-		assertEquals(before, calls.log.size());
+		assertFalse(calls.log.get(calls.log.size() - 1).startsWith("open "));
 		assertTrue(allText(panel).contains("didn't look right"));
+	}
+
+	@Test
+	public void theWordmarkOpensTheSite() throws Exception
+	{
+		Calls calls = new Calls();
+		DreamChasersPanel panel = newPanel(calls);
+		flush();
+		AbstractButton mark = (AbstractButton) named(panel, "wordmark");
+		assertTrue("the wordmark image is the link", mark.getIcon() != null);
+		assertEquals("Open dream-chasers.cc", mark.getToolTipText());
+		clickNamed(panel, "wordmark");
+		assertEquals("open https://dream-chasers.cc/", calls.log.get(calls.log.size() - 1));
+	}
+
+	@Test
+	public void sectionsRunEventsCompetitionHallOfFameTilesLiveThenTheSplash() throws Exception
+	{
+		DreamChasersPanel panel = newPanel(new Calls());
+		panel.setConnected(true);
+		panel.setSignedInAs("Maho z h");
+		panel.setTilesEnabled(true);
+		panel.setLiveEnabled(true);
+		flush();
+		assertEquals(List.of("account", "verify", "roster", "everything", "clogHint",
+			"events", "competition", "halloffame", "tiles", "live", "splash"), sectionNames(panel));
+		assertEquals(List.of("events", "competition", "halloffame", "tiles", "live"), DreamChasersPanel.SECTION_ORDER);
+
+		String text = allText(panel);
+		int at = -1;
+		for (String title : new String[]{"EVENTS", "COMPETITION", "HALL OF FAME", "TILE PACKS", "DRM LIVE", "CLAN SPLASH"})
+		{
+			int i = text.indexOf(title);
+			assertTrue(title + " after the one before it in:\n" + text, i > at);
+			at = i;
+		}
+		snapshot(panel, "order");
+	}
+
+	@Test
+	public void theSplashIsLastFullWidthAndPinnedToTheBottom() throws Exception
+	{
+		DreamChasersPanel panel = newPanel(new Calls());
+		panel.setConnected(true);
+		panel.setSignedInAs("Maho z h");
+		panel.showFeatured(new ApiResult<>(ApiResult.Status.OK, GSON.fromJson(
+			"{\"rsn\":\"Vorki\",\"panelUrl\":\"https://dream-chasers.cc/s/v.png\"}", cc.dreamchasers.clan.api.FeaturedResponse.class), NOW, null));
+		panel.showFeaturedImage("Vorki", new BufferedImage(450, 253, BufferedImage.TYPE_INT_RGB));
+		flush();
+		Component splash = named(panel, "section:splash");
+		assertEquals("the splash is the panel's last part", splash,
+			((java.awt.BorderLayout) panel.getLayout()).getLayoutComponent(java.awt.BorderLayout.SOUTH));
+
+		Component img = named(panel, "splashImage");
+		javax.swing.JPanel outer = panel.getWrappedPanel();
+		javax.swing.JScrollPane scroll = find(outer, javax.swing.JScrollPane.class);
+		assertEquals("RuneLite's own scroll bar policy", javax.swing.ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
+			scroll.getVerticalScrollBarPolicy());
+
+		// a tall sidebar (no scroll bar, 242 wide): the panel fills it and the splash sits on its bottom edge
+		layOut(outer, 2000);
+		assertFalse("no scroll bar", scroll.getVerticalScrollBar().isVisible());
+		assertEquals("the viewport's full width", scroll.getViewport().getWidth(), panel.getWidth());
+		int wideWidth = panel.getWidth();
+		assertTrue("stretched past its content", panel.getHeight() > panel.getPreferredSize().height + 100);
+		assertEquals("on the bottom edge", panel.getHeight(), splash.getY() + splash.getHeight());
+		assertEquals("full width", panel.getWidth(), splash.getWidth());
+		assertEquals("the image is edge to edge", panel.getWidth(), img.getWidth());
+		assertEquals("its height is the one made for 225 wide", Math.round(253 * 225f / 450), img.getHeight());
+		java.awt.Dimension wide = panel.getPreferredSize();
+
+		// a short sidebar (scroll bar, 225 wide): the content keeps its own height and scrolls, as before
+		layOut(outer, 200);
+		assertTrue("a scroll bar", scroll.getVerticalScrollBar().isVisible());
+		assertTrue("the scroll bar takes its width", panel.getWidth() < wideWidth);
+		assertEquals(panel.getPreferredSize().height, panel.getHeight());
+		assertEquals(panel.getHeight(), splash.getY() + splash.getHeight());
+		assertEquals("the same height at either width", Math.round(253 * 225f / 450), img.getHeight());
+		assertEquals("the preferred height doesn't follow the width", wide.height, panel.getPreferredSize().height);
+	}
+
+	@Test
+	public void aLayoutPassNeverChangesPreferredSizes() throws Exception
+	{
+		DreamChasersPanel panel = newPanel(new Calls());
+		panel.setConnected(true);
+		panel.setSignedInAs("Maho z h");
+		panel.showFeatured(new ApiResult<>(ApiResult.Status.OK, GSON.fromJson(
+			"{\"rsn\":\"Vorki\",\"panelUrl\":\"https://dream-chasers.cc/s/v.png\"}", cc.dreamchasers.clan.api.FeaturedResponse.class), NOW, null));
+		panel.showFeaturedImage("Vorki", new BufferedImage(450, 253, BufferedImage.TYPE_INT_RGB));
+		flush();
+		DreamChasersPanel.SplashImage img = (DreamChasersPanel.SplashImage) named(panel, "splashImage");
+		javax.swing.JPanel outer = panel.getWrappedPanel();
+		layOut(outer, 4000);
+		java.awt.Dimension pref = panel.getPreferredSize();
+		java.awt.Dimension imgPref = img.getPreferredSize();
+		// every sidebar height around the content's own, where the scroll bar comes and goes
+		for (int h = pref.height - 20; h <= pref.height + 20; h++)
+		{
+			layOut(outer, h);
+			int width = panel.getWidth();
+			java.awt.Rectangle bounds = panel.getBounds();
+			java.awt.Rectangle splashBounds = named(panel, "section:splash").getBounds();
+			layOut(outer, h);
+			assertEquals("settled at " + h, bounds, panel.getBounds());
+			assertEquals("splash settled at " + h, splashBounds, named(panel, "section:splash").getBounds());
+			assertEquals("width settled at " + h, width, panel.getWidth());
+			assertEquals("panel preferred size at " + h + " (" + width + " wide)", pref, panel.getPreferredSize());
+			assertEquals("splash image preferred size at " + h, imgPref, img.getPreferredSize());
+			assertEquals("the splash ends at the panel's bottom at " + h, panel.getHeight(), splashBounds.y + splashBounds.height);
+		}
+	}
+
+	/** Sizes the sidebar and lays it out top down, as one validate pass in the client does. */
+	private static void layOut(javax.swing.JPanel outer, int height) throws Exception
+	{
+		SwingUtilities.invokeAndWait(() ->
+		{
+			outer.setSize(242, height);
+			layoutAll(outer);
+		});
+		flush();
+	}
+
+	@Test
+	public void thePlayerButtonShowsOnlyWhenSignedInAndItsMenuSignsOut() throws Exception
+	{
+		Calls calls = new Calls();
+		DreamChasersPanel panel = newPanel(calls);
+		flush();
+		Component player = named(panel, "player");
+		assertFalse("hidden before sign-in", player.isVisible());
+		panel.setConnected(true);
+		flush();
+		assertFalse("connected isn't signed in", player.isVisible());
+
+		panel.setSignedInAs("Maho z h");
+		flush();
+		assertTrue(player.isVisible());
+		assertEquals(DreamChasersPanel.PLAYER_SIZE, player.getPreferredSize().width);
+		assertEquals(List.of("Connected as Maho z h", "Open dream-chasers.cc", "Sign out"), menuLabels(panel));
+		assertFalse("no Sign out button anywhere in the panel", visibleButton(panel, "Sign out"));
+		assertFalse(allText(panel).contains("[Sign out]"));
+
+		clickMenu(panel, "Open dream-chasers.cc");
+		assertEquals("open https://dream-chasers.cc/", calls.log.get(calls.log.size() - 1));
+		clickMenu(panel, "Sign out");
+		assertEquals("signOut", calls.log.get(calls.log.size() - 1));
+
+		panel.setVerifiedAs("Maho z h");
+		flush();
+		assertEquals("Verified as Maho z h", menuLabels(panel).get(0));
+		assertFalse("the menu has the verified line now: no second one", allText(panel).contains("Verified as <b>"));
+		assertEquals("Verified as Maho z h", ((javax.swing.JComponent) player).getToolTipText());
+		snapshot(panel, "player");
+
+		panel.setSignedInAs(null);
+		flush();
+		assertFalse("hidden again after sign-out", player.isVisible());
+	}
+
+	@Test
+	public void eventsHaveNoSignOut() throws Exception
+	{
+		DreamChasersPanel panel = newPanel(new Calls());
+		panel.setConnected(true);
+		panel.setSignedInAs("Maho z h");
+		panel.showEvents(ok("events.json", EventsResponse.class));
+		flush();
+		Container events = (Container) named(panel, "section:events");
+		String text = allText(events);
+		assertTrue(text, text.contains("[Events page]"));
+		assertFalse(text, text.contains("Sign out"));
+		assertFalse(text, text.contains("Signed in as"));
 	}
 
 	@Test
@@ -841,9 +1040,9 @@ public class DreamChasersPanelTest
 		flush();
 		String text = allText(panel);
 		assertTrue(text.contains("Featured: <b>Vorki &lt;i&gt;</b>"));
-		JLabel img = findIcon(panel);
-		assertEquals("fits inside the section", 193, img.getIcon().getIconWidth());
-		assertEquals(108, img.getIcon().getIconHeight());
+		DreamChasersPanel.SplashImage img = (DreamChasersPanel.SplashImage) named(panel, "splashImage");
+		assertEquals("its shape kept when drawn", 113, img.heightFor(201));
+		assertEquals("a fixed height, made for RuneLite's panel width", 127, img.getPreferredSize().height);
 		assertTrue("off until the setting is on", text.contains("Turn on <b>Clan splash</b>"));
 		assertFalse(text.contains("[Feature me on the clan splash]"));
 
@@ -919,24 +1118,95 @@ public class DreamChasersPanelTest
 		assertFalse(allText(panel).contains("TILE PACKS"));
 	}
 
-	private static JLabel findIcon(Container c)
+	/** The first component with this name, depth first; fails if there is none. */
+	private static Component named(Container c, String name)
+	{
+		Component found = findNamed(c, name);
+		if (found == null)
+		{
+			throw new AssertionError("no component named " + name);
+		}
+		return found;
+	}
+
+	private static Component findNamed(Container c, String name)
 	{
 		for (Component child : c.getComponents())
 		{
-			if (child instanceof JLabel && ((JLabel) child).getIcon() != null && ((JLabel) child).getIcon().getIconWidth() == DreamChasersPanel.SPLASH_WIDTH)
+			if (name.equals(child.getName()))
 			{
-				return (JLabel) child;
+				return child;
 			}
 			if (child instanceof Container)
 			{
-				JLabel l = findIcon((Container) child);
-				if (l != null)
+				Component found = findNamed((Container) child, name);
+				if (found != null)
 				{
-					return l;
+					return found;
 				}
 			}
 		}
 		return null;
+	}
+
+	/** The panel's sections ("section:KEY"), top down. */
+	private static List<String> sectionNames(Container c)
+	{
+		List<String> out = new ArrayList<>();
+		for (Component child : c.getComponents())
+		{
+			if (child.getName() != null && child.getName().startsWith("section:"))
+			{
+				out.add(child.getName().substring("section:".length()));
+			}
+			else if (child instanceof Container)
+			{
+				out.addAll(sectionNames((Container) child));
+			}
+		}
+		return out;
+	}
+
+	private static void clickNamed(Container root, String name) throws Exception
+	{
+		SwingUtilities.invokeAndWait(() -> ((AbstractButton) named(root, name)).doClick());
+		flush();
+	}
+
+	/** The player menu's items, in order; the first (who) must be greyed out, the rest not. */
+	private static List<String> menuLabels(DreamChasersPanel panel) throws Exception
+	{
+		List<String> out = new ArrayList<>();
+		SwingUtilities.invokeAndWait(() ->
+		{
+			for (Component c : panel.accountMenu().getComponents())
+			{
+				if (c instanceof javax.swing.JMenuItem)
+				{
+					javax.swing.JMenuItem item = (javax.swing.JMenuItem) c;
+					assertEquals(item.getText(), !out.isEmpty(), item.isEnabled());
+					out.add(item.getText());
+				}
+			}
+		});
+		return out;
+	}
+
+	private static void clickMenu(DreamChasersPanel panel, String label) throws Exception
+	{
+		SwingUtilities.invokeAndWait(() ->
+		{
+			for (Component c : panel.accountMenu().getComponents())
+			{
+				if (c instanceof javax.swing.JMenuItem && label.equals(((javax.swing.JMenuItem) c).getText()))
+				{
+					((javax.swing.JMenuItem) c).doClick();
+					return;
+				}
+			}
+			throw new AssertionError("no menu item " + label);
+		});
+		flush();
 	}
 
 	private static void click(Container root, String label) throws Exception

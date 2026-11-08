@@ -6,9 +6,16 @@ The Dream Chasers clan's own RuneLite plugin. It adds a sidebar panel with:
   up. Events are for clan members only, so this needs a one-time sign-in (below).
 - **Competition**: the clan's current Wise Old Man competition and its top 10.
 - **Hall of Fame**: the most recent clan firsts.
-- **Links**: the clan site, and "Join our Discord" once the clan has a permanent invite.
 
-Everything comes from the clan site, `https://dream-chasers.cc`.
+Everything comes from the clan site, `https://dream-chasers.cc`. The Dream
+Chasers wordmark at the top opens the site. Once you're signed in, the round
+player button in the top right corner opens a menu: who you're signed in as
+("Verified as …" once your name is verified), **Join our Discord** once the
+clan has a permanent invite, the site, and **Sign out**.
+
+Top to bottom the panel runs: the sign-in cards (only until you're set up),
+**Events**, **Competition**, **Hall of Fame**, **Tile packs**, **DRM Live**,
+and the **Clan splash** across the full width at the bottom.
 Two opt-in extras sit in the same panel: **DRM Live** (get on the clan stream)
 and the **Clan splash** (be the featured member's statue). Further opt-ins post
 your own personal bests and new collection log slots to the clan's Hall of Fame,
@@ -189,7 +196,7 @@ the panel) and nothing is linked. A request lasts 10 minutes.
 panel and press **Link**. It works once and lasts 10 minutes.
 
 The plugin only ever stores a token for dream-chasers.cc. **Sign out** in the
-panel revokes it, and you can also revoke it on dream-chasers.cc/plugin.
+player menu (top right of the panel) revokes it, and you can also revoke it on dream-chasers.cc/plugin.
 
 ## DRM Live: get on the clan stream
 

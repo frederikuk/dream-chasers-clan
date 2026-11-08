@@ -22,17 +22,20 @@ import cc.dreamchasers.clan.api.LiveJoinResponse;
 import cc.dreamchasers.clan.api.LiveResponse;
 import cc.dreamchasers.clan.api.ModelStatusResponse;
 import cc.dreamchasers.clan.api.Standing;
+import java.awt.BasicStroke;
 import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.Cursor;
 import java.awt.Dimension;
-import java.awt.FlowLayout;
 import java.awt.Font;
-import java.awt.Image;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
 import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseAdapter;
+import java.awt.geom.Ellipse2D;
 import java.awt.image.BufferedImage;
 import java.time.Clock;
 import java.time.Instant;
@@ -46,12 +49,15 @@ import java.util.stream.Collectors;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
+import javax.swing.Icon;
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
+import javax.swing.JComponent;
 import javax.swing.JLabel;
+import javax.swing.JMenuItem;
 import javax.swing.JPanel;
+import javax.swing.JPopupMenu;
 import javax.swing.JTextField;
-import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.border.EmptyBorder;
 import net.runelite.client.ui.FontManager;
@@ -91,11 +97,14 @@ public class DreamChasersPanel extends PluginPanel
 		+ "&bull; The same model is your profile picture and 3D view on your clan profile on the site.<br>"
 		+ "&bull; Press <b>Remove me</b> at any time: the site deletes your model and splash, and your profile stops using it.<br>"
 		+ "Stand still in game, then press the button.";
+	/** The player button in the header's top right corner, like the site's account icon. */
+	static final int PLAYER_SIZE = 30;
 	/**
-	 * The featured splash is 450×253, made for 225 wide. Inside the panel's and
-	 * the section's borders there are 193 pixels, so it's drawn at that.
+	 * The content sections, top down, under the cards that only show before
+	 * setup. The clan splash is not in it: it sits under them all, at the
+	 * bottom of the panel, as wide as the panel.
 	 */
-	static final int SPLASH_WIDTH = PluginPanel.PANEL_WIDTH - 16 - 16;
+	static final List<String> SECTION_ORDER = List.of("events", "competition", "halloffame", "tiles", "live");
 
 	public interface Listener
 	{
@@ -188,12 +197,14 @@ public class DreamChasersPanel extends PluginPanel
 	private final JPanel everything = section();
 	private final JPanel clogHint = section();
 	private final JPanel live = section();
-	private final JPanel splash = section();
+	/** Full width and pinned to the bottom of the panel: no side padding, its parts pad themselves. */
+	private final JPanel splash = new JPanel();
 	private final JPanel events = section();
 	private final JPanel competition = section();
 	private final JPanel hallOfFame = section();
 	private final JPanel tiles = section();
-	private final JPanel links = section();
+	/** Top right: the account menu (who, the site, Sign out). Only while signed in. */
+	private final JButton player = new JButton(new PlayerIcon(PLAYER_SIZE));
 	private final Timer ticker;
 
 	private boolean connected;
@@ -246,7 +257,7 @@ public class DreamChasersPanel extends PluginPanel
 	private boolean splashOptedIn;
 	private ApiResult<FeaturedResponse> featuredResult;
 	private String featuredImageRsn;
-	private Image featuredImage;
+	private SplashImage featuredImage;
 	private ApiResult<ModelStatusResponse> modelStatus;
 	private boolean splashBusy;
 	private String splashMessage;
@@ -270,20 +281,53 @@ public class DreamChasersPanel extends PluginPanel
 		this.safeLinks = safeLinks;
 
 		setBackground(Brand.VOID);
-		setBorder(new EmptyBorder(8, 8, 8, 8));
-		setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
+		setBorder(new EmptyBorder(0, 0, 0, 0));
+		setLayout(new BorderLayout());
 
-		add(header(mark));
+		// everything but the splash, top down; the splash goes under it, at the bottom
+		JPanel content = new JPanel();
+		content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
+		content.setOpaque(false);
+		content.setBorder(new EmptyBorder(8, 8, 0, 8));
+		content.add(header(mark));
 		status.setForeground(Brand.MUTED);
 		status.setFont(FontManager.getRunescapeSmallFont());
 		status.setAlignmentX(Component.LEFT_ALIGNMENT);
-		add(status);
-		add(Box.createVerticalStrut(6));
-		for (JPanel p : new JPanel[]{account, verify, roster, everything, clogHint, live, splash, events, competition, hallOfFame, tiles, links})
+		content.add(status);
+		content.add(Box.createVerticalStrut(6));
+		account.setName("section:account");
+		verify.setName("section:verify");
+		roster.setName("section:roster");
+		everything.setName("section:everything");
+		clogHint.setName("section:clogHint");
+		events.setName("section:events");
+		competition.setName("section:competition");
+		hallOfFame.setName("section:halloffame");
+		tiles.setName("section:tiles");
+		live.setName("section:live");
+		// the setup cards first (they show before setup, or for a hint), then SECTION_ORDER
+		for (JPanel p : new JPanel[]{account, verify, roster, everything, clogHint, events, competition, hallOfFame, tiles, live})
 		{
-			add(p);
-			add(Box.createVerticalStrut(8));
+			content.add(p);
+			content.add(Box.createVerticalStrut(8));
 		}
+		add(content, BorderLayout.NORTH);
+
+		splash.setName("section:splash");
+		splash.setLayout(new BoxLayout(splash, BoxLayout.Y_AXIS));
+		splash.setBackground(Brand.NIGHT);
+		splash.setBorder(BorderFactory.createMatteBorder(2, 0, 0, 0, Brand.GOLD_DEEP));
+		splash.setAlignmentX(Component.LEFT_ALIGNMENT);
+		add(splash, BorderLayout.SOUTH);
+
+		// PluginPanel puts this panel at the top of its scroll view, at its preferred height.
+		// This view holds it in the centre instead: a plain (not Scrollable) view is stretched
+		// to the viewport while it is shorter, so the splash sits at the bottom; once the
+		// content is taller than the sidebar it scrolls as before.
+		JPanel view = new JPanel(new BorderLayout());
+		view.setBackground(Brand.VOID);
+		view.add(this, BorderLayout.CENTER);
+		getScrollPane().setViewportView(view);
 
 		// Keep "in 2h 15m" and LIVE current without any network traffic.
 		ticker = new Timer(30_000, e -> renderEvents());
@@ -428,7 +472,6 @@ public class DreamChasersPanel extends PluginPanel
 		{
 			boolean hadInvite = discordInvite() != null;
 			linksResult = result;
-			renderLinks();
 			if (hadInvite != (discordInvite() != null))
 			{
 				renderAccount();     // step 1 of the join card names the invite; only then, so nothing typed is lost
@@ -587,6 +630,7 @@ public class DreamChasersPanel extends PluginPanel
 				verifyMessage = null;
 			}
 			verifiedAs = rsn;
+			renderHeader();
 			renderVerify();
 		});
 	}
@@ -680,18 +724,16 @@ public class DreamChasersPanel extends PluginPanel
 		});
 	}
 
-	/** A downloaded splash, drawn at {@link #SPLASH_WIDTH}. Kept until a newer one loads. */
+	/** A downloaded splash, drawn across the panel's full width. Kept until a newer one loads. */
 	public void showFeaturedImage(String rsn, BufferedImage image)
 	{
-		if (image == null || image.getWidth() <= 0)
+		if (image == null || image.getWidth() <= 0 || image.getHeight() <= 0)
 		{
 			return;
 		}
-		int h = Math.max(1, image.getHeight() * SPLASH_WIDTH / image.getWidth());
-		Image scaled = image.getScaledInstance(SPLASH_WIDTH, h, Image.SCALE_SMOOTH);
 		onEdt(() ->
 		{
-			featuredImage = scaled;
+			featuredImage = new SplashImage(image);
 			featuredImageRsn = rsn;
 			renderSplash();
 		});
@@ -732,6 +774,7 @@ public class DreamChasersPanel extends PluginPanel
 
 	private void renderAll()
 	{
+		renderHeader();
 		renderStatus();
 		renderAccount();
 		renderVerify();
@@ -744,7 +787,64 @@ public class DreamChasersPanel extends PluginPanel
 		renderCompetition();
 		renderHallOfFame();
 		renderTiles();
-		renderLinks();
+	}
+
+	/** The player button shows only while signed in: the rule Sign out always had. */
+	private void renderHeader()
+	{
+		boolean signedIn = connected && signedInAs != null;
+		player.setVisible(signedIn);
+		player.setToolTipText(signedIn ? whoLine() : null);
+	}
+
+	/** "Verified as NAME" once the site has verified the logged-in name, else "Connected as NAME". */
+	private String whoLine()
+	{
+		return verifiedAs != null ? "Verified as " + verifiedAs : "Connected as " + signedInAs;
+	}
+
+	/** The player button's menu: who this is (greyed out), the Discord invite once known, the site, Sign out. Built fresh on each click. */
+	JPopupMenu accountMenu()
+	{
+		JPopupMenu menu = new JPopupMenu();
+		menu.setName("accountMenu");
+		JMenuItem who = menuItem(whoLine(), null);
+		who.setEnabled(false);
+		menu.add(who);
+		menu.addSeparator();
+		String invite = discordInvite();
+		if (invite != null)
+		{
+			// the server invite, from /links; the join card had it before sign-in
+			menu.add(menuItem("Join our Discord", () -> go(invite, SafeLinks.DISCORD)));
+		}
+		menu.add(menuItem("Open dream-chasers.cc", this::openSite));
+		menu.add(menuItem("Sign out", listener::signOut));
+		return menu;
+	}
+
+	private static JMenuItem menuItem(String label, Runnable action)
+	{
+		JMenuItem item = new JMenuItem(label);
+		item.putClientProperty("html.disable", Boolean.TRUE);     // a name is shown as typed, never as HTML
+		if (action != null)
+		{
+			item.addActionListener(e -> action.run());
+		}
+		return item;
+	}
+
+	private void showAccountMenu()
+	{
+		JPopupMenu menu = accountMenu();
+		// right-aligned under the button, as on the site
+		menu.show(player, player.getWidth() - menu.getPreferredSize().width, player.getHeight());
+	}
+
+	/** The wordmark and the menu's site item: the site from /links, so a staging build opens staging. */
+	private void openSite()
+	{
+		go(linkOr(LinksResponse::getSite, SITE), safeLinks.site());
 	}
 
 	private void renderStatus()
@@ -812,12 +912,8 @@ public class DreamChasersPanel extends PluginPanel
 			}
 		}
 		events.add(Box.createVerticalStrut(4));
-		JPanel footer = row();
-		footer.add(small("Signed in as " + signedInAs));
-		events.add(footer);
 		JPanel buttons = row();
 		buttons.add(button("Events page", () -> go(linkOr(l -> l.getEvents(), SITE + "/events"), safeLinks.site())));
-		buttons.add(button("Sign out", listener::signOut));
 		events.add(buttons);
 		done(events);
 	}
@@ -1068,7 +1164,15 @@ public class DreamChasersPanel extends PluginPanel
 		}
 		if (verifiedAs != null && !verifyOpen && !verifyBusy && verifyDiscordName == null && verifyMessage == null && verifyWaitCode == null)
 		{
-			verify.add(text("Verified as <b>" + esc(verifiedAs) + "</b>.", Brand.MUTED));
+			if (signedInAs != null)
+			{
+				// the player button's menu says "Verified as NAME": no second line for it
+				verify.setVisible(false);
+			}
+			else
+			{
+				verify.add(text("Verified as <b>" + esc(verifiedAs) + "</b>.", Brand.MUTED));
+			}
 			done(verify);
 			return;
 		}
@@ -1380,27 +1484,29 @@ public class DreamChasersPanel extends PluginPanel
 			done(splash);
 			return;
 		}
-		if (header(splash, "splash", "Clan splash"))
+		JPanel top = splashPart(6, 0);
+		splash.add(top);
+		if (header(top, "splash", "Clan splash"))
 		{
 			done(splash);
 			return;
 		}
+		JPanel bottom = splashPart(0, 8);
 		ApiResult<FeaturedResponse> fr = featuredResult;
 		FeaturedResponse f = fr == null ? null : fr.getValue();
 		if (featuredImage != null)
 		{
-			JLabel img = new JLabel(new ImageIcon(featuredImage));
-			img.setAlignmentX(Component.LEFT_ALIGNMENT);
-			splash.add(img);
-			splash.add(text("Featured: <b>" + esc(featuredImageRsn) + "</b>", Brand.GOLD));
+			splash.add(featuredImage);     // edge to edge
+			bottom.add(Box.createVerticalStrut(4));
+			bottom.add(text("Featured: <b>" + esc(featuredImageRsn) + "</b>", Brand.GOLD));
 		}
 		else if (f != null && !notBlank(f.getRsn()))
 		{
-			splash.add(text("Nobody is featured yet.", Brand.MUTED));
+			bottom.add(text("Nobody is featured yet.", Brand.MUTED));
 		}
 		else if (fr != null && f == null)
 		{
-			splash.add(text(esc(fr.getMessage()), Brand.MUTED));
+			bottom.add(text(esc(fr.getMessage()), Brand.MUTED));
 		}
 
 		if (signedInAs != null)
@@ -1412,17 +1518,17 @@ public class DreamChasersPanel extends PluginPanel
 				switch (st)
 				{
 					case "ok":
-						splash.add(text("You're in the pool: any day could be yours.", Brand.TEXT));
+						bottom.add(text("You're in the pool: any day could be yours.", Brand.TEXT));
 						break;
 					case "rejected":
-						splash.add(text("The splash maker couldn't use your last pose"
+						bottom.add(text("The splash maker couldn't use your last pose"
 							+ (notBlank(ms.getReason()) ? ": " + esc(ms.getReason()) + "." : ". Stand still in game and press <b>Send a new pose</b>."), Brand.WARN));
 						break;
 					case "queued":
-						splash.add(text("Your model is sent. Your splash is being made; check back in an hour.", Brand.TEXT));
+						bottom.add(text("Your model is sent. Your splash is being made; check back in an hour.", Brand.TEXT));
 						break;
 					default:
-						splash.add(text("You're signed up for the clan splash.", Brand.TEXT));
+						bottom.add(text("You're signed up for the clan splash.", Brand.TEXT));
 				}
 				JPanel b = row();
 				if (splashEnabled)
@@ -1430,29 +1536,41 @@ public class DreamChasersPanel extends PluginPanel
 					b.add(button("Send a new pose", () -> splashAction(listener::featureMe)));
 				}
 				b.add(button("Remove me", () -> splashAction(listener::removeMe)));
-				splash.add(b);
+				bottom.add(b);
 			}
 			else if (!splashEnabled)
 			{
-				splash.add(text("Want to be the statue? Turn on <b>Clan splash</b> in this plugin's settings.", Brand.MUTED));
+				bottom.add(text("Want to be the statue? Turn on <b>Clan splash</b> in this plugin's settings.", Brand.MUTED));
 			}
 			else
 			{
-				splash.add(text(SPLASH_CONSENT, Brand.TEXT));
+				bottom.add(text(SPLASH_CONSENT, Brand.TEXT));
 				JPanel b = row();
 				b.add(primary("Feature me on the clan splash", () -> splashAction(listener::featureMe)));
-				splash.add(b);
+				bottom.add(b);
 			}
 			if (splashBusy)
 			{
-				splash.add(text("Working…", Brand.MUTED));
+				bottom.add(text("Working…", Brand.MUTED));
 			}
 			else if (splashMessage != null)
 			{
-				splash.add(text(esc(splashMessage), splashMessageIsError ? Brand.WARN : Brand.MUTED));
+				bottom.add(text(esc(splashMessage), splashMessageIsError ? Brand.WARN : Brand.MUTED));
 			}
 		}
+		splash.add(bottom);
 		done(splash);
+	}
+
+	/** One padded part of the splash section; its text lines up with the other sections' text. */
+	private static JPanel splashPart(int top, int bottom)
+	{
+		JPanel p = new JPanel();
+		p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
+		p.setOpaque(false);
+		p.setBorder(new EmptyBorder(top, 18, bottom, 14));
+		p.setAlignmentX(Component.LEFT_ALIGNMENT);
+		return p;
 	}
 
 	private void splashAction(Runnable action)
@@ -1699,57 +1817,188 @@ public class DreamChasersPanel extends PluginPanel
 		renderTiles();
 	}
 
-	private void renderLinks()
-	{
-		links.removeAll();
-		if (header(links, "links", "Dream Chasers"))
-		{
-			done(links);
-			return;
-		}
-		JPanel buttons = row();
-		LinksResponse l = linksResult == null ? null : linksResult.getValue();
-		if (l != null && notBlank(l.getDiscord()))
-		{
-			JButton discord = button("Join our Discord", () -> go(l.getDiscord(), SafeLinks.DISCORD));
-			discord.setForeground(Brand.VOID);
-			discord.setBackground(Brand.GOLD);
-			buttons.add(discord);
-		}
-		buttons.add(button("dream-chasers.cc", () -> go(linkOr(LinksResponse::getSite, SITE), safeLinks.site())));
-		links.add(buttons);
-		done(links);
-	}
-
 	// ---- widgets ----
 
-	/** The site's Dream ♥ Chasers wordmark across the top, as on dream-chasers.cc. */
+	/**
+	 * The header row, as on dream-chasers.cc: the site's Dream ♥ Chasers
+	 * wordmark on the left (a link to the site), the player button on the right.
+	 */
 	private JPanel header(BufferedImage wordmark)
 	{
-		JPanel p = new JPanel(new BorderLayout());
+		JPanel p = new JPanel(new BorderLayout(4, 0));
 		p.setOpaque(false);
 		p.setAlignmentX(Component.LEFT_ALIGNMENT);
+		JButton mark = flat(new JButton());
+		mark.setName("wordmark");
+		mark.setToolTipText("Open dream-chasers.cc");
+		mark.setHorizontalAlignment(JButton.LEFT);
+		int h;
 		if (wordmark != null)
 		{
-			int w = WORDMARK_WIDTH, h = Math.max(1, Math.round(wordmark.getHeight() * (float) w / wordmark.getWidth()));
-			JLabel img = new JLabel(new ImageIcon(ImageUtil.resizeImage(wordmark, w, h)));
-			img.setToolTipText("Dream Chasers");
-			p.add(img, BorderLayout.CENTER);
-			p.setMaximumSize(new Dimension(Integer.MAX_VALUE, h + 4));
+			int w = WORDMARK_WIDTH;
+			h = Math.max(1, Math.round(wordmark.getHeight() * (float) w / wordmark.getWidth()));
+			mark.setIcon(new ImageIcon(ImageUtil.resizeImage(wordmark, w, h)));
 		}
 		else
 		{
-			JLabel name = new JLabel(html("<b>DREAM CHASERS</b>"));
-			name.setForeground(Brand.GOLD);
-			name.setFont(FontManager.getRunescapeBoldFont());
-			p.add(name, BorderLayout.CENTER);
-			p.setMaximumSize(new Dimension(Integer.MAX_VALUE, 24));
+			mark.setText(html("<b>DREAM CHASERS</b>"));
+			mark.setForeground(Brand.GOLD);
+			mark.setFont(FontManager.getRunescapeBoldFont());
+			h = 24;
 		}
+		mark.addActionListener(e -> openSite());
+		p.add(mark, BorderLayout.CENTER);
+
+		flat(player);
+		player.setName("player");
+		Dimension size = new Dimension(PLAYER_SIZE, PLAYER_SIZE);
+		player.setPreferredSize(size);
+		player.setMinimumSize(size);
+		player.setMaximumSize(size);
+		player.addActionListener(e -> showAccountMenu());
+		p.add(player, BorderLayout.EAST);
+		p.setMaximumSize(new Dimension(Integer.MAX_VALUE, Math.max(h, PLAYER_SIZE) + 4));
 		return p;
 	}
 
-	/** The panel's inner width: RuneLite's 225 less this panel's 8 px border each side. */
-	private static final int WORDMARK_WIDTH = 209;
+	/** A button that is only its icon or text: no fill, no border, a hand cursor. */
+	private static JButton flat(JButton b)
+	{
+		b.setBorder(new EmptyBorder(0, 0, 0, 0));
+		b.setBorderPainted(false);
+		b.setContentAreaFilled(false);
+		b.setFocusPainted(false);
+		b.setOpaque(false);
+		b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		return b;
+	}
+
+	/**
+	 * The panel's inner width (RuneLite's 225 less this panel's 8 px border
+	 * each side) less the player button and the gap before it.
+	 */
+	private static final int WORDMARK_WIDTH = PluginPanel.PANEL_WIDTH - 16 - PLAYER_SIZE - 4;
+
+	/** A round person glyph in the brand, like the site's account icon. No image is fetched for it. */
+	static final class PlayerIcon implements Icon
+	{
+		private final int size;
+
+		PlayerIcon(int size)
+		{
+			this.size = size;
+		}
+
+		@Override
+		public void paintIcon(Component c, Graphics g, int x, int y)
+		{
+			Graphics2D g2 = (Graphics2D) g.create();
+			try
+			{
+				g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+				g2.translate(x, y);
+				float s = size;
+				g2.setColor(Brand.ROYAL);
+				g2.fill(new Ellipse2D.Float(1, 1, s - 2, s - 2));
+				// head and shoulders, clipped to the circle
+				g2.clip(new Ellipse2D.Float(1, 1, s - 2, s - 2));
+				g2.setColor(Brand.GOLD);
+				g2.fill(new Ellipse2D.Float(s * 0.34f, s * 0.18f, s * 0.32f, s * 0.32f));
+				g2.fill(new Ellipse2D.Float(s * 0.17f, s * 0.56f, s * 0.66f, s * 0.6f));
+				g2.setClip(null);
+				g2.setColor(Brand.GOLD_DEEP);
+				g2.setStroke(new BasicStroke(1.5f));
+				g2.draw(new Ellipse2D.Float(1, 1, s - 2, s - 2));
+			}
+			finally
+			{
+				g2.dispose();
+			}
+		}
+
+		@Override
+		public int getIconWidth()
+		{
+			return size;
+		}
+
+		@Override
+		public int getIconHeight()
+		{
+			return size;
+		}
+	}
+
+	/**
+	 * The featured splash, drawn edge to edge at whatever width the panel
+	 * gives it, keeping its shape. Its height is fixed: the image's height at
+	 * RuneLite's panel width (the width with the scroll bar showing; the splash
+	 * has no side insets). Wider, it is centred and a few rows are cropped. A
+	 * height that followed the width would feed back into the scroll bar
+	 * (as-needed) that sets the width, and the layout could flip forever.
+	 * It is rescaled only when the width changes.
+	 */
+	static final class SplashImage extends JComponent
+	{
+		/** The width the fixed height is made for. */
+		static final int SIZED_FOR = PluginPanel.PANEL_WIDTH;
+
+		private final BufferedImage image;
+		private BufferedImage scaled;
+
+		SplashImage(BufferedImage image)
+		{
+			this.image = image;
+			setName("splashImage");
+			setAlignmentX(Component.LEFT_ALIGNMENT);
+		}
+
+		/** The fixed height, whatever the width. */
+		int fixedHeight()
+		{
+			return heightFor(SIZED_FOR);
+		}
+
+		int heightFor(int width)
+		{
+			return Math.max(1, Math.round(image.getHeight() * (float) width / image.getWidth()));
+		}
+
+		@Override
+		public Dimension getPreferredSize()
+		{
+			return new Dimension(SIZED_FOR, fixedHeight());
+		}
+
+		@Override
+		public Dimension getMinimumSize()
+		{
+			return new Dimension(0, getPreferredSize().height);
+		}
+
+		@Override
+		public Dimension getMaximumSize()
+		{
+			return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
+		}
+
+		@Override
+		protected void paintComponent(Graphics g)
+		{
+			int w = getWidth();
+			if (w <= 0)
+			{
+				return;
+			}
+			if (scaled == null || scaled.getWidth() != w)
+			{
+				scaled = ImageUtil.resizeImage(image, w, heightFor(w));
+			}
+			// centred on the fixed height: cropped top and bottom when wider, banded when narrower
+			int y = (getHeight() - scaled.getHeight()) / 2;
+			g.drawImage(scaled, 0, y, null);
+		}
+	}
 
 	// ---- helpers ----
 

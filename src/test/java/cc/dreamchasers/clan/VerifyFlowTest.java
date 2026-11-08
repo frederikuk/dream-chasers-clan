@@ -135,7 +135,7 @@ public class VerifyFlowTest
 		f.start(o);
 
 		assertEquals("verified drm_pt_abc Tadeko | Verified: Tadeko is linked to the Discord account Maho. Your Discord role arrives "
-			+ "within about a minute once you're in the Dream Chasers Discord. Not your Discord account? Press Sign out and tell an officer.",
+			+ "within about a minute once you're in the Dream Chasers Discord. Not your Discord account? Press Sign out in the player menu (top right) and tell an officer.",
 			o.done.get(5, TimeUnit.SECONDS));
 		assertEquals(List.of("AB12"), o.codes);
 		assertEquals("the site's relative link, on the API's host", List.of("https://staging.dream-chasers.cc/join/p/abcdefghjkmnpqrstvwxyz23"), opened);

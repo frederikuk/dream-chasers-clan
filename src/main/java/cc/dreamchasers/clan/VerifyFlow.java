@@ -76,7 +76,7 @@ public class VerifyFlow extends BrowserApproval<JoinAttestResponse, VerifyFlow.J
 	 * only now, so someone who saw the link and approved it with their own
 	 * Discord doesn't go unnoticed.
 	 */
-	static final String NOT_YOU = " Not your Discord account? Press Sign out and tell an officer.";
+	static final String NOT_YOU = " Not your Discord account? Press Sign out in the player menu (top right) and tell an officer.";
 	static final String CHANGED = "You changed account or clan since you pressed Verify, so this PC didn't keep the sign-in. Press Verify in browser again.";
 
 	private final DrmApiClient api;
