@@ -1142,11 +1142,26 @@ public class DreamChasersPanel extends PluginPanel
 			else
 			{
 				renderNextEvent(list.get(0));
-				if (list.size() > 1)
+				// another event on at the same time (a Boss of the Weekend inside the Skill of the Month)
+				// is live too: say so, with its end, rather than listing it as coming up
+				Instant now = clock.instant();
+				List<EventInfo> rest = list.subList(1, list.size());
+				for (EventInfo e : rest)
+				{
+					if (e.isLive(now))
+					{
+						events.add(Box.createVerticalStrut(6));
+						events.add(text("<b><font color='" + Brand.hex(Brand.GOLD) + "'>" + esc(e.getTitle()) + "</font></b><br>"
+							+ "<font color='" + Brand.hex(Brand.LIVE) + "'><b>LIVE NOW</b></font>"
+							+ (e.endInstant() != null ? " · ends " + TimeText.until(now, e.endInstant()) : ""), Brand.TEXT));
+					}
+				}
+				List<EventInfo> coming = rest.stream().filter(e -> !e.isLive(now)).limit(UPCOMING_SHOWN).collect(Collectors.toList());
+				if (!coming.isEmpty())
 				{
 					events.add(Box.createVerticalStrut(6));
 					events.add(text("<b>Coming up</b>", Brand.GOLD));
-					for (EventInfo e : list.subList(1, Math.min(list.size(), UPCOMING_SHOWN + 1)))
+					for (EventInfo e : coming)
 					{
 						events.add(text(esc(e.getTitle()) + "<br><font color='" + Brand.hex(Brand.MUTED) + "'>"
 							+ TimeText.when(e.startInstant(), zone) + "</font>", Brand.TEXT));

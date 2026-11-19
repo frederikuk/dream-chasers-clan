@@ -804,6 +804,27 @@ public class DreamChasersPanelTest
 	}
 
 	@Test
+	public void aSecondLiveEventShowsAsLiveNotComingUp() throws Exception
+	{
+		DreamChasersPanel panel = newPanel(new Calls());
+		panel.setConnected(true);
+		panel.setSignedInAs("Maho z h");
+		// NOW is Mon 2 Nov 17:00 UTC: the weekend's boss and the month's skill are both on, the week's not yet
+		String json = "{\"events\":["
+			+ "{\"id\":\"b\",\"title\":\"Boss of the Weekend\",\"startsAt\":\"2026-11-02T12:00:00Z\",\"endsAt\":\"2026-11-03T12:00:00Z\"},"
+			+ "{\"id\":\"s\",\"title\":\"Skill of the Month\",\"startsAt\":\"2026-11-01T18:00:00Z\",\"endsAt\":\"2026-12-01T18:00:00Z\"},"
+			+ "{\"id\":\"w\",\"title\":\"Skill of the Week\",\"startsAt\":\"2026-11-09T19:00:00Z\",\"endsAt\":\"2026-11-16T19:00:00Z\"}]}";
+		panel.showEvents(new ApiResult<>(ApiResult.Status.OK, GSON.fromJson(json, EventsResponse.class), NOW, null));
+		flush();
+		String text = allText(panel);
+		int boss = text.indexOf("Boss of the Weekend"), month = text.indexOf("Skill of the Month"), coming = text.indexOf("Coming up");
+		assertTrue("the weekend leads", boss >= 0 && boss < month);
+		assertTrue("the month is live too, not coming up", month < coming && text.indexOf("LIVE NOW", month) > month
+			&& text.indexOf("LIVE NOW", month) < coming);
+		assertTrue("the week is coming up", text.indexOf("Skill of the Week") > coming);
+	}
+
+	@Test
 	public void eventsHaveNoSignOut() throws Exception
 	{
 		DreamChasersPanel panel = newPanel(new Calls());
