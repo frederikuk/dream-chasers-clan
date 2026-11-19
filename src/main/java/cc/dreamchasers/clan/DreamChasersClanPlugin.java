@@ -84,6 +84,7 @@ import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.ItemStack;
 import net.runelite.client.events.NpcLootReceived;
+import net.runelite.client.events.ProfileChanged;
 import net.runelite.client.events.ServerNpcLoot;
 import net.runelite.api.ScriptID;
 import net.runelite.api.gameval.VarClientID;
@@ -199,6 +200,22 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	 * again on each game tick until it has. Client thread only.
 	 */
 	private boolean verifiedDue;
+	/**
+	 * Connect was ticked in the settings while signed out: the next game tick
+	 * that can (logged in, own clan record says Dream Chasers) opens the
+	 * browser to sign in. Set on whichever thread changed the config, read on
+	 * the client thread. Never set at start-up, cleared by shutDown and by a
+	 * profile switch (its ConfigChanged events are not the member's tick).
+	 */
+	private volatile boolean signInDue;
+	/** Logged-in ticks in a row that signInDue has waited with no clan record (Reading.UNKNOWN). Client thread. */
+	private int signInUnknownTicks;
+	/**
+	 * After this many (30 s), a player with no clan record at all is taken as
+	 * blocked: the wait ends and the status line says why, so a much later
+	 * clan join doesn't open the browser out of nowhere.
+	 */
+	static final int SIGN_IN_UNKNOWN_LIMIT = 50;
 	/** Raid-stat answers in a row saying the member isn't on a stream slot. */
 	private int raidNotShown;
 	/** After this many, the member is taken as off the stream and raid stats stop until they join again. */
@@ -230,6 +247,8 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	@Override
 	protected void startUp()
 	{
+		signInDue = false;     // RuneLite reuses the instance: an earlier session's tick of Connect doesn't carry over
+		signInUnknownTicks = 0;
 		String apiBase = developerMode ? System.getProperty(API_PROPERTY, DrmApiClient.DEFAULT_BASE_URL) : DrmApiClient.DEFAULT_BASE_URL;
 		api = new DrmApiClient(okHttpClient, gson, apiBase, USER_AGENT, config::siteToken, Clock.systemUTC());
 		// every site-given link is checked before the browser opens it
@@ -254,7 +273,6 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		connectFlow = new ConnectFlow(api, executor, Clock.systemUTC(), url -> safeLinks.open(url, safeLinks.site()));
 		panel.setCollapsed(config.collapsedSections());
 		panel.setConnected(config.connect());
-		panel.setConnectDismissed(config.connectDismissed());
 		panel.setLiveEnabled(config.joinLive());
 		panel.setSplashEnabled(config.clanSplash());
 		panel.setSplashOptedIn(config.splashOptedIn());
@@ -292,6 +310,8 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	@Override
 	protected void shutDown()
 	{
+		signInDue = false;
+		signInUnknownTicks = 0;
 		pickupGone();
 		for (ScheduledFuture<?> f : new ScheduledFuture<?>[]{tick, liveTick})
 		{
@@ -317,7 +337,10 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 			verifyFlow.cancel();
 			verifyFlow = null;
 		}
-		clientToolbar.removeNavigation(navButton);
+		if (clientToolbar != null)     // injected; null only in tests that stop a bare instance
+		{
+			clientToolbar.removeNavigation(navButton);
+		}
 		if (panel != null)
 		{
 			panel.dispose();
@@ -518,6 +541,14 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	{
 		// RuneLite allows one handler per event, named after it: the collection
 		// log tick runs here too (a second GameTick handler stops the plugin starting)
+		clientTicks();
+		verifiedTick();
+		signInTick();     // after clanTick (in clientTicks) has read the own clan record
+	}
+
+	/** The ticks that read the game itself; overridden (to nothing) in tests that drive onGameTick. Client thread. */
+	void clientTicks()
+	{
 		clanTick();
 		clogTick();
 		raidTick();
@@ -525,7 +556,120 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		backfillTick();
 		rosterTick();
 		pickupTick();
-		verifiedTick();
+	}
+
+	/**
+	 * CONNECT_KEY changed ({@code ConfigChanged} values: "true", "false" or
+	 * null when unset). Only a change from off to on, while signed out, arms
+	 * the sign-in on a later tick; off clears it.
+	 */
+	void connectChanged(String oldValue, String newValue)
+	{
+		boolean on = Boolean.parseBoolean(newValue);
+		if (!on)
+		{
+			signInDue = false;
+		}
+		else if (!Boolean.parseBoolean(oldValue) && !isSignedIn())
+		{
+			signInDue = true;
+			signInUnknownTicks = 0;
+		}
+	}
+
+	/**
+	 * A profile switch posts ConfigChanged for every setting that differs
+	 * (before ProfileChanged, on the same thread): a Connect that comes on
+	 * that way wasn't ticked by the member, so the sign-in it armed is dropped.
+	 */
+	@Subscribe
+	public void onProfileChanged(ProfileChanged event)
+	{
+		signInDue = false;
+	}
+
+	/** Whether a tick still owes the sign-in that ticking Connect asked for. */
+	boolean signInDue()
+	{
+		return signInDue;
+	}
+
+	/**
+	 * Client thread, after clanTick has read the own clan record. Once Connect
+	 * has been ticked while signed out, the first tick that is logged in with
+	 * a Dream Chasers record starts the same browser approval as the player
+	 * menu's Sign in with Discord. A record that isn't Dream Chasers ends the
+	 * wait: the menu and the status line say why.
+	 */
+	void signInTick()
+	{
+		if (!signInDue)
+		{
+			return;
+		}
+		if (!connectOn() || isSignedIn())
+		{
+			signInDue = false;
+			return;
+		}
+		OwnClan.Reading reading = ownClanReading();
+		if (!loggedIn())
+		{
+			signInUnknownTicks = 0;
+			return;     // the login screen: wait
+		}
+		boolean noRecord = reading.getState() == OwnClan.State.UNKNOWN || reading.getState() == OwnClan.State.LOGGED_OUT;
+		if (noRecord && ++signInUnknownTicks < SIGN_IN_UNKNOWN_LIMIT)
+		{
+			return;     // the record hasn't loaded yet: wait, but not for ever (a player in no clan has none)
+		}
+		String blocker = noRecord ? OwnClan.blocker(OwnClan.Reading.UNKNOWN) : OwnClan.blocker(reading);
+		if (blocker != null || reading.getRsn() == null)
+		{
+			signInDue = false;     // blocked: nothing to start; the menu and the status line say why
+			signInBlocked(blocker != null ? blocker : OwnClan.blocker(OwnClan.Reading.UNKNOWN));
+			return;
+		}
+		if (signInFlowRunning())
+		{
+			return;
+		}
+		signInDue = false;
+		verifyStart();
+	}
+
+	/** Ticking Connect couldn't sign in: the status line says why (the menu already does). */
+	void signInBlocked(String blocker)
+	{
+		DreamChasersPanel p = panel;
+		if (p != null)
+		{
+			p.showSignInBlocked(blocker);
+		}
+	}
+
+	/** Client thread or any; overridden in tests. */
+	boolean connectOn()
+	{
+		return config.connect();
+	}
+
+	boolean isSignedIn()
+	{
+		return signedInName() != null;
+	}
+
+	OwnClan.Reading ownClanReading()
+	{
+		return ownClan;
+	}
+
+	/** A Sign in with Discord or a typed code is already under way. */
+	boolean signInFlowRunning()
+	{
+		VerifyFlow v = verifyFlow;
+		JoinFlow j = joinFlow;
+		return (v != null && v.isWaiting()) || (j != null && j.isBusy());
 	}
 
 	/** The Verify fold needs the logged-in name; the game gives it a tick or so after LOGGED_IN. Client thread. */
@@ -1209,17 +1353,25 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	@Subscribe
 	public void onConfigChanged(ConfigChanged event)
 	{
-		if (!DreamChasersClanConfig.GROUP.equals(event.getGroup()) || panel == null)
+		if (!DreamChasersClanConfig.GROUP.equals(event.getGroup()))
+		{
+			return;
+		}
+		if (DreamChasersClanConfig.CONNECT_KEY.equals(event.getKey()))
+		{
+			connectChanged(event.getOldValue(), event.getNewValue());     // ticked while signed out: sign in on a later tick
+		}
+		if (panel == null)
 		{
 			return;
 		}
 		// "Enable everything": on switches the seven features on, off switches them
 		// off; one turned off by hand unticks it. It only flips settings: it never
-		// opens the browser. Not signed in? The panel's Connect card does that.
+		// opens the browser. Not signed in? Ticking Connect (or the player menu) signs in.
 		boolean signedIn = signedInName() != null;
 		if (DreamChasersClanConfig.ENABLE_ALL_KEY.equals(event.getKey()) && featureOn(event.getKey()) && !signedIn)
 		{
-			panel.setEnableAllRefused(true);     // it unticks itself below: say why in the Connect card
+			panel.setEnableAllRefused(true);     // it unticks itself below: the panel's status line says why
 		}
 		EnableAll.onChanged(event.getKey(), this::featureOn, this::setFeature, signedIn);
 		if (EnableAll.isFeatureKey(event.getKey()))
@@ -1248,10 +1400,10 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 					}
 					panel.verifyDone(null, false);
 				}
-				if (!config.connect() && connectFlow != null)
+				if (!config.connect() && connectFlow != null && connectFlow.isWaiting())
 				{
 					connectFlow.cancel();
-					panel.setConnectWaiting(null, null);
+					panel.verifyDone(null, false);
 				}
 				refresh(false);
 				break;
@@ -1498,17 +1650,17 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		}
 		if (!config.connect())
 		{
-			panel.linkFinished("Turn on Connect to dream-chasers.cc in the plugin settings first");
+			panel.verifyDone("Turn on Connect to dream-chasers.cc in the plugin settings first", true);
 			return;
 		}
 		api.link(code, "RuneLite", result ->
 		{
 			if (result.getStatus() != ApiResult.Status.OK)
 			{
-				panel.linkFinished(result.getMessage());
+				panel.verifyDone(result.getMessage(), true);
 				return;
 			}
-			panel.linkFinished(null);
+			panel.verifyDone(null, false);
 			signedIn(result.getValue().getToken(), result.getValue().getName());
 		});
 	}
@@ -1525,7 +1677,6 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		{
 			return;
 		}
-		panel.setConnectWaiting(null, null);
 		panel.setSignedInAs(signedInName());
 		updateRosterStatus();
 		backfillDue = true;
@@ -1538,9 +1689,10 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		+ "with your main Discord account (it needs a verified email or phone). Then press Cancel and Connect again.";
 
 	/**
-	 * Pressing a join step (Join our Discord, Show Verify for Discord) or
-	 * Connect is the opt-in: it turns on the same setting as the config panel's
-	 * toggle, which stays off by default. Nothing is sent from here.
+	 * Turns on the same setting as the config panel's toggle, which stays off
+	 * by default. Nothing is sent from here. Since 0.5.4 the panel never calls
+	 * it: ticking Connect in the settings, with its IP-address warning, is the
+	 * consent. Only connect() below still does.
 	 */
 	@Override
 	public void optIn()
@@ -1552,7 +1704,11 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		configManager.unsetConfiguration(DreamChasersClanConfig.GROUP, DreamChasersClanConfig.DISMISSED_KEY);
 	}
 
-	/** "Already verified on another PC?": the browser-approve sign-in (ConnectFlow). */
+	/**
+	 * The browser-approve sign-in (ConnectFlow), once "Already verified on
+	 * another PC?". Not offered by the panel since 0.5.4 (Sign in with Discord
+	 * signs returning members in too); kept, its wait shown in the status line.
+	 */
 	@Override
 	public void connect()
 	{
@@ -1560,7 +1716,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		DreamChasersPanel panel = this.panel;
 		if (panel != null)
 		{
-			panel.setConnectWaiting(null, "Asking dream-chasers.cc…");
+			panel.verifyDone("Asking dream-chasers.cc…", false);
 		}
 		withRsn(rsn ->
 		{
@@ -1574,25 +1730,26 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 				@Override
 				public void waiting(String code)
 				{
-					panel.setConnectWaiting(code == null ? "…" : code, null);
+					panel.setVerifyWaiting(code == null ? "…" : code, null);
 				}
 
 				@Override
 				public void stillWaiting(String code)
 				{
-					panel.setConnectWaiting(code == null ? "…" : code, STILL_WAITING);
+					panel.setVerifyWaiting(code == null ? "…" : code, STILL_WAITING);
 				}
 
 				@Override
 				public void connected(String token, String name)
 				{
+					panel.verifyDone(null, false);
 					signedIn(token, name);
 				}
 
 				@Override
 				public void failed(String message)
 				{
-					panel.setConnectWaiting(null, message);
+					panel.verifyDone(message, true);
 				}
 			});
 		});
@@ -1607,27 +1764,28 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		}
 		if (panel != null)
 		{
-			panel.setConnectWaiting(null, null);
+			panel.verifyDone(null, false);
 		}
 	}
 
 	@Override
 	public void dismissConnect()
 	{
-		configManager.setConfiguration(DreamChasersClanConfig.GROUP, DreamChasersClanConfig.DISMISSED_KEY, true);
-		if (panel != null)
-		{
-			panel.setConnectDismissed(true);
-		}
+		configManager.setConfiguration(DreamChasersClanConfig.GROUP, DreamChasersClanConfig.DISMISSED_KEY, true);     // the old consent card's "Not now"; no longer offered
 	}
 
 	// ---- Verify for Discord (verified join) ----
 
-	/** Shown under the code once Verify in browser has waited 2 minutes (ConnectFlow.STILL_WAITING_AFTER). */
+	/** Shown after the code once Sign in with Discord has waited 2 minutes (ConnectFlow.STILL_WAITING_AFTER). */
 	public static final String VERIFY_STILL_WAITING = "Still waiting? Check your browser is signed in to discord.com "
-		+ "with your main Discord account (it needs a verified email or phone). Then press Cancel and Verify in browser again.";
+		+ "with your main Discord account (it needs a verified email or phone). Then press Cancel in the menu at the top right "
+		+ "and try Sign in with Discord again.";
 
-	/** "Verify in browser": the one-click verify (VerifyFlow). The typed code stays behind "Have a code from the site?". */
+	/**
+	 * The player menu's Sign in with Discord (or Verify NAME for Discord), and
+	 * the tick after Connect is ticked: the one-click verify (VerifyFlow),
+	 * which signs in too. The typed code is the menu's "Enter a code from the site…".
+	 */
 	@Override
 	public void verifyStart()
 	{
@@ -1663,7 +1821,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 			@Override
 			public void verified(String token, String name, String message)
 			{
-				panel.verifyDone(message, false);
+				panel.verifiedDone(message);     // stays through the fold to verified that follows
 				signedIn(token, name);
 				List<String> v = new ArrayList<>(verifiedNames);
 				v.add(name);
@@ -1717,7 +1875,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 			@Override
 			public void verified(String token, String name, String message)
 			{
-				panel.verifyDone(message, false);
+				panel.verifiedDone(message);     // stays through the fold to verified that follows
 				signedIn(token, name);
 				List<String> v = new ArrayList<>(verifiedNames);
 				v.add(name);
@@ -2035,7 +2193,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		showVerifiedAs(verifiedMatch(rsn, verifiedNames));
 	}
 
-	/** The panel's Verify fold: the matched name, or null to show Verify for Discord. */
+	/** The panel's verified name: the matched name, or null for the menu to offer Verify NAME for Discord. */
 	void showVerifiedAs(String match)
 	{
 		DreamChasersPanel panel = this.panel;

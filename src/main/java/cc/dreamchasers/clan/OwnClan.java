@@ -124,7 +124,10 @@ public final class OwnClan
 		}
 	}
 
-	/** The panel's line when verifying isn't possible yet; null when it is. */
+	/** {@link #blocker} at the login screen: the player menu says "Log in to the game to sign in" instead. */
+	public static final String LOGGED_OUT_BLOCKER = "Log in to the game to verify";
+
+	/** The player menu's line when verifying isn't possible yet; null when it is. */
 	public static String blocker(Reading reading)
 	{
 		switch (reading.getState())
@@ -132,7 +135,7 @@ public final class OwnClan
 			case IN_CLAN:
 				return null;
 			case LOGGED_OUT:
-				return "Log in to the game to verify";
+				return LOGGED_OUT_BLOCKER;
 			case NOT_IN_CLAN:
 				return reading.getClanName() != null && !isDreamChasers(reading.getClanName())
 					? "Your clan in game isn't DRM Chasers. Join DRM Chasers first"

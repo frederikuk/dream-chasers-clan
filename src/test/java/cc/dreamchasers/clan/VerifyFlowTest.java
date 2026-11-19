@@ -272,7 +272,7 @@ public class VerifyFlowTest
 			Duration.ofMillis(10), Duration.ofMinutes(10), Duration.ofMinutes(2));
 		Outcome o = new Outcome();
 		f.start(o);
-		assertEquals("error No answer from the browser within 10 minutes. Press Verify in browser to try again.",
+		assertEquals("error No answer from the browser within 10 minutes. Try Sign in with Discord again from the menu at the top right.",
 			o.done.get(5, TimeUnit.SECONDS));
 		waitFor(5);
 		assertEquals("the blip, one pending poll, one last poll past the deadline, then the cancel", 5, size());
@@ -409,7 +409,7 @@ public class VerifyFlowTest
 		Outcome o = new Outcome();
 		tickingFlow().start(o);
 		assertEquals("error " + VerifyFlow.USED, o.done.get(10, TimeUnit.SECONDS));
-		assertTrue(VerifyFlow.USED.contains("press Verify in browser again to sign this PC in"));
+		assertTrue(VerifyFlow.USED.contains("try Sign in with Discord again from the menu at the top right to sign this PC in"));
 	}
 
 	@Test
@@ -459,7 +459,7 @@ public class VerifyFlowTest
 			tried.add(url);
 			return false;
 		}, reading::get, "0.6.0", Duration.ofMillis(10), Duration.ofMinutes(10), Duration.ofMinutes(2)).start(o);
-		assertEquals("error That link didn't look right. Try Verify in browser again later.", o.done.get(5, TimeUnit.SECONDS));
+		assertEquals("error That link didn't look right. Try Sign in with Discord again later, from the menu at the top right.", o.done.get(5, TimeUnit.SECONDS));
 		assertEquals(List.of("https://evil.example/join/p/abcdefghjkmnpqrstvwxyz23"), tried);
 		assertTrue(o.codes.isEmpty());
 		TimeUnit.MILLISECONDS.sleep(50);

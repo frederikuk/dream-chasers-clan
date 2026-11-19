@@ -8,14 +8,23 @@ The Dream Chasers clan's own RuneLite plugin. It adds a sidebar panel with:
 - **Hall of Fame**: the most recent clan firsts.
 
 Everything comes from the clan site, `https://dream-chasers.cc`. The Dream
-Chasers wordmark at the top opens the site. Once you're signed in, the round
-player button in the top right corner opens a menu: who you're signed in as
-("Verified as …" once your name is verified), **Join our Discord** once the
-clan has a permanent invite, the site, and **Sign out**.
+Chasers wordmark at the top opens the site. The round player button in the top
+right corner is always there and opens the player menu: who you're signed in as
+("Verified as …" once your name is verified, "Not signed in" before), **Sign in
+with Discord** (or **Verify NAME for Discord** for a logged-in name that isn't
+verified yet), **Enter a code from the site…**, **Join our Discord**, the site,
+and **Sign out**. When signing in isn't possible yet, the menu says why in a
+greyed-out line.
 
-Top to bottom the panel runs: the sign-in cards (only until you're set up),
-**Events**, **Competition**, **Hall of Fame**, **Tile packs**, **DRM Live**,
-and the **Clan splash** across the full width at the bottom.
+There is no sign-in box in the sidebar. Signing in starts in the plugin's
+settings (see Sign in, below), and one status line under the header says what
+is happening: "Approve in your browser. Check the page shows AB12.", the
+answer once it's done, or "Turn on Connect to dream-chasers.cc in the plugin
+settings." while Connect is off.
+
+Top to bottom the panel runs: the status line, **Events**, **Competition**,
+**Hall of Fame**, **Tile packs**, **DRM Live**, and the **Clan splash** across
+the full width at the bottom.
 Two opt-in extras sit in the same panel: **DRM Live** (get on the clan stream)
 and the **Clan splash** (be the featured member's statue). Further opt-ins post
 your own personal bests and new collection log slots to the clan's Hall of Fame,
@@ -30,15 +39,13 @@ share your raid stats while you're on DRM Live, and copy the clan's tile packs.
 Every setting below that talks to dream-chasers.cc is off until you turn it on.
 RuneLite shows them in five sections: Connect, Appearance, Data, PvM and
 Livestream.
-Sign in first: follow the panel's **Join Dream Chasers** steps (join the
-Discord, then **Verify in browser** in **Verify for Discord**). Pressing
-step 1 or 2 turns on **Connect to dream-chasers.cc**, the first setting. Once
-you're signed in, the panel
+Sign in first: tick **Connect to dream-chasers.cc**, the first setting (see
+Sign in, below). Once you're signed in, the panel
 offers **Enable everything** (with the IP-address warning next to it), and the
 second setting does the same. It switches on Post personal bests, Post
 collection log, Clan splash, Clan tile packs, Join DRM Live and Share raid
 stats. Before you're signed in it does nothing: the setting unticks itself and
-the join card says why. It
+the panel's status line says why. It
 never agrees to the DRM Live stream consent or sends your character's model;
 those stay their own buttons. Untick it to turn them all off again. Turn one
 feature off by hand and it unticks itself, leaving the others as they are;
@@ -46,10 +53,12 @@ turn all of them on by hand and it ticks itself. RuneLite's settings show these
 changes once you close and reopen them.
 
 - **Connect to dream-chasers.cc** (off by default). Nothing is fetched until you
-  turn this on, or press step 1 or 2 on the panel's join card (the same
-  switch). As with every plugin that talks to a server outside RuneLite, this
-  sends your IP address to that server (dream-chasers.cc). It also turns on
-  **Verify for Discord** (below), which reads only your own clan record.
+  turn this on; the panel never turns it on by itself. As with every plugin
+  that talks to a server outside RuneLite, this sends your IP address to that
+  server (dream-chasers.cc), and RuneLite asks you to agree to that when you
+  tick it. Ticking it while signed out also signs you in: once you're logged in
+  to the game, your browser opens dream-chasers.cc to sign in with Discord
+  (see Sign in, below). It reads only your own clan record.
 - **Officer roster sync** (off by default, officers only). When you close the
   clan **Members** screen in game, the plugin sends the clan's member list
   (names and rank titles, nothing else) to dream-chasers.cc, which updates the
@@ -91,40 +100,45 @@ The clan's PB and loot feeds live on the site
 ([dream-chasers.cc/hall-of-fame](https://dream-chasers.cc/hall-of-fame)), not
 inside RuneLite.
 
-## Verify for Discord
+## Sign in (and Verify for Discord)
 
-The new way to link the plugin, and the way the clan's Discord gives you the
-**Verified** role. It needs **Connect to dream-chasers.cc** on (off by default,
-with the IP-address warning) and works only when your own clan record in game
-says the clan's in-game name, DRM Chasers.
+Signing in and getting the clan Discord's **Verified** role are one step, and
+it works for new and returning members alike. It needs **Connect to
+dream-chasers.cc** on (off by default, with the IP-address warning) and works
+only when your own clan record in game says the clan's in-game name, DRM
+Chasers.
 
-1. In the panel's **Verify for Discord** box press **Verify in browser**.
-   If the button is greyed out the box says why: "Log in to the game to
-   verify", "Join the clan in game first", "Your clan in game isn't DRM
-   Chasers. Join DRM Chasers first", or "Join DRM Chasers in game first, or
-   open your clan tab and wait a few seconds".
+1. In the plugin's settings tick **Connect to dream-chasers.cc** and agree to
+   the warning. Once you're logged in to the game, the plugin opens your
+   browser by itself. (Signed out later, or want to try again? The player menu
+   at the top right of the panel has **Sign in with Discord**.) If signing in
+   isn't possible yet, the menu says why in a greyed-out line: "Log in to the
+   game to sign in", "Join the clan in game first", "Your clan in game isn't
+   DRM Chasers. Join DRM Chasers first", or "Join DRM Chasers in game first,
+   or open your clan tab and wait a few seconds".
 2. Your browser opens a dream-chasers.cc page (sign in with Discord if it
    asks). It says "Link game account **your RSN** (DRM Chasers) to your
-   Discord **a name**?". Only press **Approve** if you pressed Verify in your
+   Discord **a name**?". Only press **Approve** if you started this in your
    own RuneLite just now; if someone sent you the link, press **Deny**. On a
    different network from the PC the page also asks for the 4-character code
-   the panel shows.
+   the panel's status line shows. **Cancel** in the player menu stops waiting.
 3. The panel picks up the answer by itself: it is signed in, and the Verified
    role arrives in Discord within about a minute once you're in the server.
    If your name isn't on the clan roster yet, or an officer has to check, the
-   panel says so and dream-chasers.cc/join tells you what's next.
+   status line says so and dream-chasers.cc/join tells you what's next.
 
-Have a code from dream-chasers.cc/join instead? **Have a code from the site?**
-under the button opens the code field: type it, press **Verify**, check the
-Discord name the panel shows, then **Confirm**.
+Have a code from dream-chasers.cc/join instead? **Enter a code from the
+site…** in the player menu asks for it, then asks you to check the Discord name
+it belongs to before anything is linked.
 
-Already signed in? **Verify for Discord…** is folded at the top of the panel;
-run it once to get the Verified role and protect your name.
+Already signed in on another name? The player menu offers **Verify NAME for
+Discord** for the logged-in name until it's verified; run it once to get the
+Verified role and protect your name.
 
 **What the plugin reads:** only your own clan record: the clan's name and
 whether you're in it. Never the member list, never anyone else.
 
-**What it sends** (to dream-chasers.cc, and only when you press the buttons):
+**What it sends** (to dream-chasers.cc, and only when you sign in or enter a code):
 the code; your RSN; the clan's name as the game shows it; the plugin's version;
 "RuneLite" as the device name; and a **hashed account id**: a one-way SHA-256
 of `"drm-clan-v1|"` and RuneLite's account hash. The account hash itself never
@@ -175,25 +189,12 @@ an officer-rank name and a few others).
   out or turn it off. The join page shows newcomers a green dot when saying
   the code will work.
 
-## How to connect (the older way)
+## The older sign-in routes
 
-The browser-approval flow below still works while the site moves over to
-Verify for Discord. In the panel it sits behind **Already verified on another
-PC?**.
-
-The first time you open the panel it explains what connecting does: the site
-checks your RSN and that you're in the clan's Discord, your IP address goes to
-dream-chasers.cc, and it never sees your Jagex or Discord password. Then:
-
-1. Press **Connect**. Your browser opens dream-chasers.cc.
-2. Sign in with Discord, if it asks.
-3. Check the 4-character code on the page matches the panel, then press **Allow**.
-
-The panel updates by itself within a few seconds. Press **Deny** (or Cancel in
-the panel) and nothing is linked. A request lasts 10 minutes.
-
-**Have a code instead?** Get one on dream-chasers.cc/plugin, paste it into the
-panel and press **Link**. It works once and lasts 10 minutes.
+Before 0.5.4 the panel also had a browser-approval **Connect** (behind
+"Already verified on another PC?") and a link-code field for codes from
+dream-chasers.cc/plugin. Sign in with Discord now signs returning members in
+too, so the panel no longer shows either.
 
 The plugin only ever stores a token for dream-chasers.cc. **Sign out** in the
 player menu (top right of the panel) revokes it, and you can also revoke it on dream-chasers.cc/plugin.

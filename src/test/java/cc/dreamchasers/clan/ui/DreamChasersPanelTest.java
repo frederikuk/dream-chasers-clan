@@ -199,13 +199,56 @@ public class DreamChasersPanelTest
 		}
 	}
 
-	private static DreamChasersPanel newPanel(Calls calls) throws Exception
+	/** The panel with its two dialogs stubbed: no window opens headless. */
+	private static class StubPanel extends DreamChasersPanel
+	{
+		/** What the code box answers; null is Cancel. */
+		String code;
+		/** What "This links RSN to Discord NAME" answers. */
+		boolean yes;
+		final List<String> asked = new ArrayList<>();
+
+		StubPanel(Calls calls, BufferedImage mark)
+		{
+			super(calls, mark, java.time.Clock.fixed(NOW, ZoneId.of("UTC")), ZoneId.of("Europe/London"));
+		}
+
+		@Override
+		String askCode()
+		{
+			return code;
+		}
+
+		@Override
+		boolean confirmLink(String rsn, String discordName)
+		{
+			asked.add(rsn + "|" + discordName);
+			return yes;
+		}
+	}
+
+	private static StubPanel newPanel(Calls calls) throws Exception
 	{
 		BufferedImage mark = ImageUtil.loadImageResource(DreamChasersPanel.class, "/cc/dreamchasers/clan/wordmark.png");
-		DreamChasersPanel[] out = new DreamChasersPanel[1];
-		SwingUtilities.invokeAndWait(() -> out[0] = new DreamChasersPanel(calls,
-			mark, java.time.Clock.fixed(NOW, ZoneId.of("UTC")), ZoneId.of("Europe/London")));
+		StubPanel[] out = new StubPanel[1];
+		SwingUtilities.invokeAndWait(() -> out[0] = new StubPanel(calls, mark));
 		return out[0];
+	}
+
+	/** The one status line under the header. */
+	private static String statusText(DreamChasersPanel panel) throws Exception
+	{
+		String[] out = new String[1];
+		SwingUtilities.invokeAndWait(() -> out[0] = ((JLabel) named(panel, "status")).getText());
+		return out[0];
+	}
+
+	/** The old Join / Not connected / Connecting and Verify for Discord boxes are gone in every state. */
+	private static void assertNoSignInBoxes(DreamChasersPanel panel)
+	{
+		assertEquals(null, findNamed(panel, "section:account"));
+		assertEquals(null, findNamed(panel, "section:verify"));
+		assertFalse(sectionNames(panel).contains("account") || sectionNames(panel).contains("verify"));
 	}
 
 	private static String allText(Container c)
@@ -276,25 +319,27 @@ public class DreamChasersPanelTest
 	}
 
 	@Test
-	public void disconnectedAsksForTheOptIn() throws Exception
+	public void disconnectedPointsToTheSettings() throws Exception
 	{
-		DreamChasersPanel panel = newPanel(new Calls());
+		Calls calls = new Calls();
+		DreamChasersPanel panel = newPanel(calls);
 		flush();
 
+		assertNoSignInBoxes(panel);
 		String text = allText(panel);
-		assertTrue(text.contains("JOIN DREAM CHASERS"));
-		assertTrue(text, text.contains("[Get the Discord invite]") && text.contains("[Show Verify for Discord]"));
-		assertTrue("step 1 says where the invite is before links load", text.contains("The invite is on dream-chasers.cc/join."));
-		assertTrue(text.contains("[Not now]") && text.contains("[Privacy]") && text.contains("[Already verified on another PC?]"));
-		assertTrue(text.contains("IP address") && text.contains("password") && text.contains("Step 1 or 2 turns on Connect"));
-		assertFalse("Connect waits behind its button", text.contains("[Connect]"));
-		assertFalse("Verify for Discord waits for the opt-in", text.contains("VERIFY FOR DISCORD"));
-		assertFalse(text.contains("Get a code"));
+		assertFalse(text, text.contains("JOIN DREAM CHASERS") || text.contains("NOT CONNECTED") || text.contains("VERIFY FOR DISCORD"));
+		assertTrue(statusText(panel), statusText(panel).contains(DreamChasersPanel.CONNECT_OFF));
+		Component player = named(panel, "player");
+		assertTrue("the player button is there signed out too", player.isVisible());
+		assertEquals("Sign in", ((javax.swing.JComponent) player).getToolTipText());
+		assertEquals(List.of("~Not signed in", "~Turn on Connect in the plugin settings", "Join our Discord", "Open dream-chasers.cc"),
+			menuLabels(panel));
+		assertFalse("the panel never turns Connect on by itself", calls.log.contains("optIn"));
 		snapshot(panel, "disconnected");
 	}
 
 	@Test
-	public void signedOutShowsSiteDataAndTheSignInSteps() throws Exception
+	public void signedOutShowsSiteDataAndNoSignInBox() throws Exception
 	{
 		Calls calls = new Calls();
 		DreamChasersPanel panel = newPanel(calls);
@@ -309,18 +354,11 @@ public class DreamChasersPanelTest
 		assertTrue(text.contains("Zokairox Lam"));
 		assertTrue(text.contains("Normal + CM"));
 		assertTrue(text.contains("Recent clan firsts"));
-		assertTrue(text.contains("JOIN DREAM CHASERS"));
-		assertTrue("step 3 is the card below", text.contains("VERIFY FOR DISCORD"));
-		assertFalse("the old Connect waits behind its button", text.contains("How to connect"));
-		assertFalse(text.contains("[Have a code instead?]"));
+		assertNoSignInBoxes(panel);
+		assertFalse(text, text.contains("JOIN DREAM CHASERS") || text.contains("VERIFY FOR DISCORD") || text.contains("How to connect"));
+		assertFalse("no call to action in the panel", visibleButton(panel, "Verify in browser") || visibleButton(panel, "Connect"));
+		assertEquals("Connect on and signed out: no status line", "", statusText(panel));
 		snapshot(panel, "signed-out");
-		click(panel, "Already verified on another PC?");
-		text = allText(panel);
-		assertTrue(text.contains("How to connect"));
-		assertTrue(text.contains("[Connect]"));
-		assertTrue(text.contains("[Have a code instead?]"));
-		assertFalse("the code box waits behind its button", text.contains("[Link]"));
-		snapshot(panel, "signed-out-other-pc");
 	}
 
 	@Test
@@ -345,9 +383,20 @@ public class DreamChasersPanelTest
 		assertTrue(text.contains("Starts in"));
 		assertFalse("the website link section is gone: the wordmark is the link", text.contains("[dream-chasers.cc]"));
 		assertFalse("no Links section", text.contains("DREAM CHASERS\n"));
-		assertEquals("signed-in members keep the server invite, in the player menu",
-			List.of("Connected as Maho z h", "Join our Discord", "Open dream-chasers.cc", "Sign out"), menuLabels(panel));
+		assertNoSignInBoxes(panel);
+		assertEquals("signed in, logged out of the game: nothing to verify yet",
+			List.of("~Connected as Maho z h", "Enter a code from the site…", "Join our Discord", "Open dream-chasers.cc", "Sign out"),
+			menuLabels(panel));
 		snapshot(panel, "signed-in");
+	}
+
+	@Test
+	public void eventsSendSignedOutMembersToTheMenu() throws Exception
+	{
+		DreamChasersPanel panel = newPanel(new Calls());
+		panel.setConnected(true);
+		flush();
+		assertTrue(allText(panel).contains("Events are for clan members. Sign in from the menu at the top right to see them."));
 	}
 
 	@Test
@@ -358,7 +407,9 @@ public class DreamChasersPanelTest
 		panel.setConnected(true);
 		panel.setSignedInAs("Maho z h");
 		flush();
-		assertFalse("no invite before /links", menuLabels(panel).contains("Join our Discord"));
+		clickMenu(panel, "Join our Discord");
+		assertEquals("before /links: the join page, which has the invite", "open https://dream-chasers.cc/join",
+			calls.log.get(calls.log.size() - 1));
 		LinksResponse links = GSON.fromJson(read("links.json"), LinksResponse.class);
 		links.setDiscord("https://discord.gg/example");
 		panel.showLinks(new ApiResult<>(ApiResult.Status.OK, links, NOW, null));
@@ -380,12 +431,12 @@ public class DreamChasersPanelTest
 	{
 		Calls calls = new Calls();
 		DreamChasersPanel panel = newPanel(calls);
-		panel.setConnected(true);     // not signed in: the join card's step 1 has the invite
+		panel.setConnected(true);     // not signed in: the player menu has the invite
 		LinksResponse links = GSON.fromJson(read("links.json"), LinksResponse.class);
 		links.setDiscord("https://discord.gg/example");
 		panel.showLinks(new ApiResult<>(ApiResult.Status.OK, links, NOW, null));
 		flush();
-		click(panel, "Join our Discord");
+		clickMenu(panel, "Join our Discord");
 		assertEquals("open https://discord.gg/example", calls.log.get(calls.log.size() - 1));
 		clickNamed(panel, "wordmark");
 		assertEquals("open https://dream-chasers.cc/", calls.log.get(calls.log.size() - 1));    // the checked form goes to the browser
@@ -394,8 +445,8 @@ public class DreamChasersPanelTest
 		links.setDiscord("https://discord.gg.evil.example/login");
 		panel.showLinks(new ApiResult<>(ApiResult.Status.OK, links, NOW, null));
 		flush();
-		click(panel, "Join our Discord");
-		assertFalse(calls.log.get(calls.log.size() - 1).startsWith("open "));
+		clickMenu(panel, "Join our Discord");
+		assertFalse(calls.log.get(calls.log.size() - 1).startsWith("open https://discord.gg.evil"));
 		assertTrue(allText(panel).contains("didn't look right"));
 	}
 
@@ -421,7 +472,7 @@ public class DreamChasersPanelTest
 		panel.setTilesEnabled(true);
 		panel.setLiveEnabled(true);
 		flush();
-		assertEquals(List.of("account", "verify", "roster", "everything", "clogHint",
+		assertEquals(List.of("roster", "everything", "clogHint",
 			"events", "competition", "halloffame", "tiles", "live", "splash"), sectionNames(panel));
 		assertEquals(List.of("events", "competition", "halloffame", "tiles", "live"), DreamChasersPanel.SECTION_ORDER);
 
@@ -434,6 +485,337 @@ public class DreamChasersPanelTest
 			at = i;
 		}
 		snapshot(panel, "order");
+	}
+
+	@Test
+	public void thePlayerButtonIsAlwaysThereAndItsMenuSignsOut() throws Exception
+	{
+		Calls calls = new Calls();
+		DreamChasersPanel panel = newPanel(calls);
+		flush();
+		Component player = named(panel, "player");
+		assertTrue("signed out, Connect off", player.isVisible());
+		panel.setConnected(true);
+		flush();
+		assertTrue("signed out, Connect on", player.isVisible());
+		assertEquals("Sign in", ((javax.swing.JComponent) player).getToolTipText());
+
+		panel.setSignedInAs("Maho z h");
+		flush();
+		assertTrue(player.isVisible());
+		assertEquals("Connected as Maho z h", ((javax.swing.JComponent) player).getToolTipText());
+		assertEquals(DreamChasersPanel.PLAYER_SIZE, player.getPreferredSize().width);
+		assertEquals("~Connected as Maho z h", menuLabels(panel).get(0));
+		assertTrue(menuLabels(panel).contains("Sign out"));
+		assertFalse("no Sign out button anywhere in the panel", visibleButton(panel, "Sign out"));
+		assertFalse(allText(panel).contains("[Sign out]"));
+
+		clickMenu(panel, "Open dream-chasers.cc");
+		assertEquals("open https://dream-chasers.cc/", calls.log.get(calls.log.size() - 1));
+		clickMenu(panel, "Sign out");
+		assertEquals("signOut", calls.log.get(calls.log.size() - 1));
+
+		panel.setVerifiedAs("Maho z h");
+		flush();
+		assertEquals("~Verified as Maho z h", menuLabels(panel).get(0));
+		assertEquals("Verified as Maho z h", ((javax.swing.JComponent) player).getToolTipText());
+		snapshot(panel, "player");
+
+		panel.setSignedInAs(null);
+		flush();
+		assertTrue("still there after sign-out", player.isVisible());
+		assertEquals("Sign in", ((javax.swing.JComponent) player).getToolTipText());
+		assertFalse("no Sign out once signed out", menuLabels(panel).contains("Sign out"));
+		assertEquals("~Not signed in", menuLabels(panel).get(0));
+	}
+
+	@Test
+	public void theMenuSaysWhatSignInNeeds() throws Exception
+	{
+		Calls calls = new Calls();
+		DreamChasersPanel panel = newPanel(calls);
+		flush();
+		assertEquals("Connect off", "~Turn on Connect in the plugin settings", menuLabels(panel).get(1));
+		assertFalse("no code entry with Connect off", menuLabels(panel).contains("Enter a code from the site…"));
+
+		panel.setConnected(true);
+		flush();
+		assertEquals("at the login screen", "~Log in to the game to sign in", menuLabels(panel).get(1));
+		assertEquals("Enter a code from the site…", menuLabels(panel).get(2));
+
+		panel.setOwnClan("Join the clan in game first", null);
+		flush();
+		assertEquals("the own clan record blocks it", "~Join the clan in game first", menuLabels(panel).get(1));
+		assertFalse("nothing to press", menuLabels(panel).contains("Sign in with Discord"));
+
+		panel.setOwnClan(null, "Tadeko");
+		flush();
+		assertEquals(List.of("~Not signed in", "Sign in with Discord", "Enter a code from the site…", "Join our Discord", "Open dream-chasers.cc"),
+			menuLabels(panel));
+		clickMenu(panel, "Sign in with Discord");
+		assertEquals("verifyStart", calls.log.get(calls.log.size() - 1));
+		assertTrue(statusText(panel).contains("Asking dream-chasers.cc…"));
+		assertEquals("one start at a time", "~Sign in with Discord", menuLabels(panel).get(1));
+		assertFalse("no code entry while busy", menuLabels(panel).contains("Enter a code from the site…"));
+		assertFalse("the panel never turns Connect on itself", calls.log.contains("optIn"));
+	}
+
+	@Test
+	public void signedInTheMenuOffersVerifyForTheLoggedInName() throws Exception
+	{
+		Calls calls = new Calls();
+		DreamChasersPanel panel = newPanel(calls);
+		panel.setConnected(true);
+		panel.setSignedInAs("Maho z h");
+		flush();
+		assertFalse("at the login screen a signed-in member sees no sign-in line",
+			menuLabels(panel).contains("~Log in to the game to sign in"));
+
+		panel.setOwnClan(null, "Tadeko");
+		flush();
+		assertEquals(List.of("~Connected as Maho z h", "Verify Tadeko for Discord", "Enter a code from the site…", "Join our Discord",
+			"Open dream-chasers.cc", "Sign out"), menuLabels(panel));
+		clickMenu(panel, "Verify Tadeko for Discord");
+		assertEquals("verifyStart", calls.log.get(calls.log.size() - 1));
+
+		panel.verifyDone(null, false);
+		panel.setVerifiedAs("Tadeko");
+		flush();
+		assertEquals("verified: nothing more to do", List.of("~Verified as Tadeko", "Enter a code from the site…", "Join our Discord",
+			"Open dream-chasers.cc", "Sign out"), menuLabels(panel));
+
+		panel.setOwnClan("Your clan in game isn't DRM Chasers. Join DRM Chasers first", null);
+		panel.setVerifiedAs(null);
+		flush();
+		assertEquals("blocked, signed in", "~Your clan in game isn't DRM Chasers. Join DRM Chasers first", menuLabels(panel).get(1));
+	}
+
+	@Test
+	public void theBrowserWaitIsInTheMenuAndTheStatusLine() throws Exception
+	{
+		Calls calls = new Calls();
+		DreamChasersPanel panel = newPanel(calls);
+		panel.setConnected(true);
+		panel.setOwnClan(null, "Tadeko");
+		flush();
+		clickMenu(panel, "Sign in with Discord");
+		panel.setVerifyWaiting("AB12", null);
+		flush();
+		assertEquals(List.of("~Not signed in", "~Approve in your browser: AB12", "Cancel", "Join our Discord", "Open dream-chasers.cc"),
+			menuLabels(panel));
+		assertTrue(statusText(panel), statusText(panel).contains("Approve in your browser. Check the page shows <b>AB12</b>."));
+		assertNoSignInBoxes(panel);
+		snapshot(panel, "verify-waiting");
+
+		panel.setVerifyWaiting("AB12", cc.dreamchasers.clan.DreamChasersClanPlugin.VERIFY_STILL_WAITING);
+		flush();
+		assertTrue("the still-waiting hint joins the line", statusText(panel).contains("Still waiting? Check your browser"));
+		assertTrue(statusText(panel).contains("AB12"));
+		clickMenu(panel, "Cancel");
+		assertEquals("verifyStop", calls.log.get(calls.log.size() - 1));
+		assertTrue(statusText(panel).contains("Cancelled. Nothing was linked."));
+		assertEquals("ready again", "Sign in with Discord", menuLabels(panel).get(1));
+
+		panel.setVerifyWaiting("CD34", null);
+		panel.verifyDone("Not on the clan roster yet. Watch dream-chasers.cc/join.", false);
+		flush();
+		assertFalse("the answer ends the wait", statusText(panel).contains("CD34"));
+		assertTrue(statusText(panel).contains("Not on the clan roster yet."));
+
+		panel.verifyDone(cc.dreamchasers.clan.OwnClan.LOGGED_OUT_BLOCKER + ".", true);
+		flush();
+		assertEquals("an error in the warning colour", Brand.WARN, ((JLabel) named(panel, "status")).getForeground());
+	}
+
+	@Test
+	public void aCodeFromTheSiteIsAskedForThenConfirmed() throws Exception
+	{
+		Calls calls = new Calls();
+		StubPanel panel = newPanel(calls);
+		panel.setConnected(true);
+		panel.setOwnClan(null, "Tadeko");
+		flush();
+
+		panel.code = null;     // the member closes the box
+		clickMenu(panel, "Enter a code from the site…");
+		assertFalse("nothing sent for no code", calls.log.stream().anyMatch(l -> l.startsWith("verifyPeek")));
+
+		panel.code = " abcd 2345 ";
+		clickMenu(panel, "Enter a code from the site…");
+		assertEquals("verifyPeek abcd 2345", calls.log.get(calls.log.size() - 1));
+		assertTrue(statusText(panel).contains("Checking the code…"));
+
+		panel.yes = true;
+		panel.verifyAsk("Tadeko", "Maho <b>");
+		flush();
+		assertEquals("asked with the RSN and the Discord name as given", List.of("Tadeko|Maho <b>"), panel.asked);
+		assertEquals("This links Tadeko to Discord Maho <b>. Only continue if that Discord account is yours. "
+			+ "If someone sent you this code, press Cancel.", DreamChasersPanel.linkQuestion("Tadeko", "Maho <b>"));
+		assertEquals("verifyConfirm", calls.log.get(calls.log.size() - 1));
+		assertTrue(statusText(panel).contains("Linking…"));
+
+		panel.verifiedDone("Verified: Tadeko is linked to your Discord.");
+		flush();
+		assertTrue(statusText(panel).contains("Verified: Tadeko is linked to your Discord."));
+
+		panel.yes = false;
+		panel.verifyAsk("Tadeko", "Someone");
+		flush();
+		assertEquals("verifyCancel", calls.log.get(calls.log.size() - 1));
+		assertTrue(statusText(panel).contains("Cancelled. Nothing was linked."));
+	}
+
+	@Test
+	public void theStatusLineKeepsItsPriorities() throws Exception
+	{
+		DreamChasersPanel panel = newPanel(new Calls());
+		panel.setEnableAllRefused(true);
+		flush();
+		assertTrue("refused beats Connect off", statusText(panel).contains(DreamChasersPanel.ENABLE_ALL_REFUSED));
+		assertFalse(statusText(panel).contains(DreamChasersPanel.CONNECT_OFF));
+		assertTrue(DreamChasersPanel.ENABLE_ALL_REFUSED.contains("Sign in from the menu at the top right"));
+
+		panel.verifyDone("Turn on Connect to dream-chasers.cc in the plugin settings first", true);
+		flush();
+		assertTrue("a verify message beats both", statusText(panel).contains("plugin settings first"));
+		panel.setConnected(true);
+		panel.setVerifyWaiting("AB12", null);
+		flush();
+		assertTrue("the wait beats everything", statusText(panel).contains("AB12"));
+		panel.verifyDone(null, false);
+		flush();
+		assertTrue("back to the refusal", statusText(panel).contains("turned itself off"));
+
+		panel.setSignedInAs("Tadeko");
+		panel.showCompetition(new ApiResult<>(ApiResult.Status.ERROR, null, null, "down"));
+		flush();
+		assertTrue("signing in clears the refusal; the refresh failure is last", statusText(panel).contains("Couldn't refresh just now"));
+		panel.setConnected(false);
+		flush();
+		assertEquals("signed in with Connect off: nothing to say", "", statusText(panel));
+	}
+
+	@Test
+	public void theVerifiedMessageSurvivesTheFoldThatFollows() throws Exception
+	{
+		DreamChasersPanel panel = newPanel(new Calls());
+		panel.setConnected(true);
+		panel.setOwnClan(null, "Tadeko");
+		String verified = "Verified: Tadeko is linked to the Discord account maho. Your Discord role arrives within about a minute once you're in the Dream Chasers Discord."
+			+ " Not your Discord account? Press Sign out in the player menu (top right) and tell an officer.";
+		panel.verifiedDone(verified);
+		panel.setSignedInAs("Maho z h");
+		panel.setVerifiedAs("Tadeko");
+		flush();
+		assertTrue("the fold after the verify keeps its answer", statusText(panel).contains("Not your Discord account?"));
+		assertEquals("~Verified as Tadeko", menuLabels(panel).get(0));
+		snapshot(panel, "verified");
+
+		// another account, then back: a later fold clears it
+		panel.setVerifiedAs(null);
+		panel.setVerifiedAs("Fred525");
+		flush();
+		assertFalse(statusText(panel).contains("Not your Discord account?"));
+
+		panel.verifiedDone(verified);
+		panel.setSignedInAs(null);
+		flush();
+		assertFalse("signing out clears it", statusText(panel).contains("Not your Discord account?"));
+
+		panel.verifyDone("You pressed Deny in the browser, so nothing was linked.", true);
+		panel.setVerifiedAs("Tadeko");
+		flush();
+		assertFalse("an error is cleared by the fold", statusText(panel).contains("pressed Deny"));
+
+		// a plain (not error) answer that isn't the verify's own success goes with the fold too
+		panel.setSignedInAs("Maho z h");
+		panel.setVerifiedAs(null);
+		panel.verifyDone("Your name isn't on the clan roster yet. Watch dream-chasers.cc/join.", false);
+		flush();
+		assertTrue(statusText(panel).contains("on the clan roster yet"));
+		panel.setVerifiedAs("Tadeko");     // an officer verified them; the next refresh folds
+		flush();
+		assertFalse("the roster-not-yet answer doesn't outlive the fold", statusText(panel).contains("on the clan roster yet"));
+		assertEquals("~Verified as Tadeko", menuLabels(panel).get(0));
+	}
+
+	@Test
+	public void aBlockedConnectTickSaysWhyInTheStatusLine() throws Exception
+	{
+		DreamChasersPanel panel = newPanel(new Calls());
+		panel.setConnected(true);
+		String blocker = "Your clan in game isn't DRM Chasers. Join DRM Chasers first";
+		panel.setOwnClan(blocker, null);
+		flush();
+		assertEquals("signed out with Connect on: nothing until a tick of Connect is blocked", "", statusText(panel));
+		panel.showSignInBlocked(blocker);
+		flush();
+		assertTrue(statusText(panel), statusText(panel).contains("Join DRM Chasers first."));
+		assertEquals(Brand.WARN, ((JLabel) named(panel, "status")).getForeground());
+		assertTrue("the menu says it too", menuLabels(panel).contains("~" + blocker));
+
+		panel.setOwnClan(null, "Tadeko");     // joined DRM Chasers in game: the reason no longer holds
+		flush();
+		assertFalse(statusText(panel).contains("Join DRM Chasers first"));
+
+		panel.setOwnClan(blocker, null);
+		panel.showSignInBlocked(blocker);
+		panel.setVerifyWaiting("AB12", null);     // a new attempt from the menu
+		flush();
+		assertFalse(statusText(panel).contains("Join DRM Chasers first"));
+		panel.verifyDone(null, false);
+		flush();
+		assertFalse("the new attempt cleared it", statusText(panel).contains("Join DRM Chasers first"));
+	}
+
+	@Test
+	public void whyTheSiteSignedTheMemberOutIsInTheStatusLine() throws Exception
+	{
+		DreamChasersPanel panel = newPanel(new Calls());
+		panel.setConnected(true);
+		panel.showEvents(new ApiResult<>(ApiResult.Status.UNAUTHORIZED, null, null, "Not signed in"));
+		flush();
+		assertEquals("plain signed out: nothing to say", "", statusText(panel));
+
+		panel.showEvents(new ApiResult<>(ApiResult.Status.UNAUTHORIZED, null, null, "Your sign-in was revoked by an officer"));
+		flush();
+		assertTrue(statusText(panel), statusText(panel).contains("Your sign-in was revoked by an officer."));
+		assertEquals(Brand.WARN, ((JLabel) named(panel, "status")).getForeground());
+
+		panel.setEnableAllRefused(true);
+		flush();
+		assertTrue("Enable everything's refusal comes first", statusText(panel).contains(DreamChasersPanel.ENABLE_ALL_REFUSED));
+		panel.setSignedInAs("Tadeko");
+		panel.showEvents(new ApiResult<>(ApiResult.Status.OK, new EventsResponse(), NOW, null));
+		flush();
+		assertFalse("signed in again: gone", statusText(panel).contains("revoked"));
+	}
+
+	@Test
+	public void eventsHaveNoSignOut() throws Exception
+	{
+		DreamChasersPanel panel = newPanel(new Calls());
+		panel.setConnected(true);
+		panel.setSignedInAs("Maho z h");
+		panel.showEvents(ok("events.json", EventsResponse.class));
+		flush();
+		Container events = (Container) named(panel, "section:events");
+		String text = allText(events);
+		assertTrue(text, text.contains("[Events page]"));
+		assertFalse(text, text.contains("Sign out"));
+		assertFalse(text, text.contains("Signed in as"));
+	}
+
+	@Test
+	public void forbiddenExplainsHowToFixMembership() throws Exception
+	{
+		DreamChasersPanel panel = newPanel(new Calls());
+		panel.setConnected(true);
+		panel.setSignedInAs("Someone");
+		panel.showEvents(new ApiResult<>(ApiResult.Status.FORBIDDEN, null, null, "Not a clan member"));
+		flush();
+
+		assertTrue(allText(panel).contains("#rsn"));
 	}
 
 	@Test
@@ -528,232 +910,6 @@ public class DreamChasersPanelTest
 	}
 
 	@Test
-	public void thePlayerButtonShowsOnlyWhenSignedInAndItsMenuSignsOut() throws Exception
-	{
-		Calls calls = new Calls();
-		DreamChasersPanel panel = newPanel(calls);
-		flush();
-		Component player = named(panel, "player");
-		assertFalse("hidden before sign-in", player.isVisible());
-		panel.setConnected(true);
-		flush();
-		assertFalse("connected isn't signed in", player.isVisible());
-
-		panel.setSignedInAs("Maho z h");
-		flush();
-		assertTrue(player.isVisible());
-		assertEquals(DreamChasersPanel.PLAYER_SIZE, player.getPreferredSize().width);
-		assertEquals(List.of("Connected as Maho z h", "Open dream-chasers.cc", "Sign out"), menuLabels(panel));
-		assertFalse("no Sign out button anywhere in the panel", visibleButton(panel, "Sign out"));
-		assertFalse(allText(panel).contains("[Sign out]"));
-
-		clickMenu(panel, "Open dream-chasers.cc");
-		assertEquals("open https://dream-chasers.cc/", calls.log.get(calls.log.size() - 1));
-		clickMenu(panel, "Sign out");
-		assertEquals("signOut", calls.log.get(calls.log.size() - 1));
-
-		panel.setVerifiedAs("Maho z h");
-		flush();
-		assertEquals("Verified as Maho z h", menuLabels(panel).get(0));
-		assertFalse("the menu has the verified line now: no second one", allText(panel).contains("Verified as <b>"));
-		assertEquals("Verified as Maho z h", ((javax.swing.JComponent) player).getToolTipText());
-		snapshot(panel, "player");
-
-		panel.setSignedInAs(null);
-		flush();
-		assertFalse("hidden again after sign-out", player.isVisible());
-	}
-
-	@Test
-	public void eventsHaveNoSignOut() throws Exception
-	{
-		DreamChasersPanel panel = newPanel(new Calls());
-		panel.setConnected(true);
-		panel.setSignedInAs("Maho z h");
-		panel.showEvents(ok("events.json", EventsResponse.class));
-		flush();
-		Container events = (Container) named(panel, "section:events");
-		String text = allText(events);
-		assertTrue(text, text.contains("[Events page]"));
-		assertFalse(text, text.contains("Sign out"));
-		assertFalse(text, text.contains("Signed in as"));
-	}
-
-	@Test
-	public void forbiddenExplainsHowToFixMembership() throws Exception
-	{
-		DreamChasersPanel panel = newPanel(new Calls());
-		panel.setConnected(true);
-		panel.setSignedInAs("Someone");
-		panel.showEvents(new ApiResult<>(ApiResult.Status.FORBIDDEN, null, null, "Not a clan member"));
-		flush();
-
-		assertTrue(allText(panel).contains("#rsn"));
-	}
-
-	@Test
-	public void linkButtonPassesTheCode() throws Exception
-	{
-		Calls calls = new Calls();
-		DreamChasersPanel panel = newPanel(calls);
-		panel.setConnected(true);
-		flush();
-		click(panel, "Already verified on another PC?");
-		click(panel, "Have a code instead?");
-		assertTrue(allText(panel).contains("[Link]"));
-
-		SwingUtilities.invokeAndWait(() ->
-		{
-			// the account card's field; Verify for Discord's sits above it, greyed out until the clan record loads
-			javax.swing.JTextField field = enabledField(panel);
-			field.setText("DRM-7KQ4-P2XM");
-			field.postActionEvent();
-		});
-		flush();
-
-		assertEquals("link DRM-7KQ4-P2XM", calls.log.get(calls.log.size() - 1));
-		assertTrue(allText(panel).contains("Linking…"));
-	}
-
-	@Test
-	public void verifyForDiscordIsGatedOnTheOwnClanRecord() throws Exception
-	{
-		Calls calls = new Calls();
-		DreamChasersPanel panel = newPanel(calls);
-		assertFalse("hidden until Connect is on", allText(panel).contains("VERIFY FOR DISCORD"));
-		panel.setConnected(true);
-		flush();
-		String text = allText(panel);
-		assertTrue(text.contains("VERIFY FOR DISCORD"));
-		assertTrue("logged out at first", text.contains("Log in to the game to verify."));
-		assertEquals("greyed out", null, enabledField(panel));
-
-		panel.setOwnClan("Join the clan in game first", null);
-		flush();
-		assertTrue(allText(panel).contains("Join the clan in game first."));
-		assertFalse(findButton(panel, "Verify in browser").isEnabled());
-		click(panel, "Verify in browser");
-		assertFalse("a greyed-out button sends nothing", calls.log.contains("verifyStart"));
-		click(panel, "Have a code from the site?");
-		assertFalse("the typed code waits for the clan record too", findButton(panel, "Verify").isEnabled());
-		click(panel, "Hide code entry");
-
-		panel.setOwnClan(null, "Tadeko");
-		flush();
-		assertFalse(allText(panel).contains("Join the clan in game first."));
-		assertTrue(findButton(panel, "Verify in browser").isEnabled());
-		assertFalse("the typed code waits behind its button", visibleButton(panel, "Verify"));
-		snapshot(panel, "verify");
-	}
-
-	@Test
-	public void verifyForDiscordAsksBeforeLinking() throws Exception
-	{
-		Calls calls = new Calls();
-		DreamChasersPanel panel = newPanel(calls);
-		panel.setConnected(true);
-		panel.setOwnClan(null, "Tadeko");
-		flush();
-		click(panel, "Have a code from the site?");
-		assertTrue(visibleButton(panel, "Get a code"));
-		SwingUtilities.invokeAndWait(() ->
-		{
-			javax.swing.JTextField field = enabledField(panel);
-			field.setText("abcd 2345");
-			field.postActionEvent();
-		});
-		flush();
-		assertEquals("verifyPeek abcd 2345", calls.log.get(calls.log.size() - 1));
-		assertTrue(allText(panel).contains("Checking the code…"));
-
-		panel.verifyAsk("Tadeko", "Maho <b>");
-		flush();
-		String text = allText(panel);
-		assertTrue(text, text.contains("This links <b>Tadeko</b> to Discord <b>Maho &lt;b&gt;</b>. "
-			+ "Only continue if that Discord account is yours. If someone sent you this code, press Cancel."));
-		snapshot(panel, "verify-confirm");
-		click(panel, "Confirm");
-		assertEquals("verifyConfirm", calls.log.get(calls.log.size() - 1));
-		assertTrue(allText(panel).contains("Linking…"));
-
-		panel.verifyDone("Verified: Tadeko is linked to your Discord.", false);
-		flush();
-		assertTrue(allText(panel).contains("Verified: Tadeko is linked to your Discord."));
-
-		panel.verifyAsk("Tadeko", "Someone");
-		flush();
-		click(panel, "Cancel");
-		assertEquals("verifyCancel", calls.log.get(calls.log.size() - 1));
-		assertTrue(allText(panel).contains("Cancelled. Nothing was linked."));
-	}
-
-	@Test
-	public void verifyInBrowserWaitsWithTheCodeAndCancels() throws Exception
-	{
-		Calls calls = new Calls();
-		DreamChasersPanel panel = newPanel(calls);
-		panel.setConnected(true);
-		panel.setOwnClan(null, "Tadeko");
-		flush();
-		click(panel, "Verify in browser");
-		assertEquals("verifyStart", calls.log.get(calls.log.size() - 1));
-		assertTrue(allText(panel).contains("Asking dream-chasers.cc…"));
-		assertFalse("one start at a time", findButton(panel, "Verify in browser").isEnabled());
-
-		panel.setVerifyWaiting("AB12", null);
-		flush();
-		String text = allText(panel);
-		assertTrue(text, text.contains("Waiting for you to approve in the browser. Code: <b>AB12</b>"));
-		assertFalse("no second start while waiting", visibleButton(panel, "Verify in browser"));
-		assertFalse("no code entry while waiting", visibleButton(panel, "Have a code from the site?"));
-		snapshot(panel, "verify-waiting");
-
-		panel.setVerifyWaiting("AB12", cc.dreamchasers.clan.DreamChasersClanPlugin.VERIFY_STILL_WAITING);
-		flush();
-		assertTrue(allText(panel).contains("Still waiting? Check your browser"));
-		click(panel, "Cancel");
-		assertEquals("verifyStop", calls.log.get(calls.log.size() - 1));
-		assertTrue(allText(panel).contains("Cancelled. Nothing was linked."));
-		assertTrue("ready again", findButton(panel, "Verify in browser").isEnabled());
-
-		panel.setVerifyWaiting("CD34", null);
-		panel.verifyDone("Not on the clan roster yet. Watch dream-chasers.cc/join.", false);
-		flush();
-		text = allText(panel);
-		assertFalse("the answer ends the wait", text.contains("CD34"));
-		assertTrue(text, text.contains("Not on the clan roster yet."));
-	}
-
-	@Test
-	public void verifyInBrowserWaitStaysOpenWhenSignedIn() throws Exception
-	{
-		Calls calls = new Calls();
-		DreamChasersPanel panel = newPanel(calls);
-		panel.setConnected(true);
-		panel.setSignedInAs("Tadeko");
-		panel.setOwnClan(null, "Tadeko");
-		flush();
-		click(panel, "Verify for Discord…");
-		click(panel, "Verify in browser");
-		panel.setVerifyWaiting("AB12", null);
-		flush();
-		assertTrue("a signed-in member's wait isn't folded away", allText(panel).contains("Code: <b>AB12</b>"));
-	}
-
-	@Test
-	public void enableEverythingBeforeConnectingSaysWhy() throws Exception
-	{
-		DreamChasersPanel panel = newPanel(new Calls());
-		panel.setEnableAllRefused(true);
-		flush();
-		assertTrue(allText(panel).contains("<b>Enable everything</b> needs you signed in first, so it turned itself off. Follow the steps below, then close and reopen the settings and tick it again."));
-		panel.setSignedInAs("Tadeko");
-		panel.setSignedInAs(null);
-		flush();
-		assertFalse("signing in clears it", allText(panel).contains("needs you signed in first"));
-	}
-
-	@Test
 	public void everySectionFoldsFromItsTitleAndRemembers() throws Exception
 	{
 		Calls calls = new Calls();
@@ -783,41 +939,6 @@ public class DreamChasersPanelTest
 		flush();
 		assertTrue(allText(panel).contains("Skill of the Month - Fishing"));
 		assertEquals("collapsed ", calls.log.get(calls.log.size() - 1));
-	}
-
-	@Test
-	public void verifyForDiscordFoldsAwayOnceTheNameIsVerified() throws Exception
-	{
-		DreamChasersPanel panel = newPanel(new Calls());
-		panel.setConnected(true);
-		panel.setOwnClan(null, "Tadeko");
-		panel.verifyDone("Verified: Tadeko is linked to your Discord.", false);
-		panel.setVerifiedAs("Tadeko");
-		flush();
-		String text = allText(panel);
-		assertFalse(text, text.contains("VERIFY FOR DISCORD"));
-		assertTrue(text, text.contains("Verified as <b>Tadeko</b>."));
-		snapshot(panel, "verified");
-
-		// another account, not verified: the section is back
-		panel.setVerifiedAs(null);
-		flush();
-		assertTrue(allText(panel).contains("VERIFY FOR DISCORD"));
-	}
-
-	@Test
-	public void verifyForDiscordFoldsOnceSignedIn() throws Exception
-	{
-		DreamChasersPanel panel = newPanel(new Calls());
-		panel.setConnected(true);
-		panel.setSignedInAs("Tadeko");
-		panel.setOwnClan(null, "Tadeko");
-		flush();
-		assertFalse(allText(panel).contains("VERIFY FOR DISCORD"));
-		click(panel, "Verify for Discord…");
-		assertTrue(allText(panel).contains("VERIFY FOR DISCORD"));
-		click(panel, "Hide");
-		assertFalse(allText(panel).contains("VERIFY FOR DISCORD"));
 	}
 
 	@Test
@@ -863,92 +984,6 @@ public class DreamChasersPanelTest
 		boolean[] out = new boolean[1];
 		SwingUtilities.invokeAndWait(() -> out[0] = findButton(root, label) != null);
 		return out[0];
-	}
-
-	@Test
-	public void consentCardConnectsOrStepsAside() throws Exception
-	{
-		Calls calls = new Calls();
-		DreamChasersPanel panel = newPanel(calls);
-		flush();
-		click(panel, "Already verified on another PC?");
-		click(panel, "Connect");
-		assertEquals("connect", calls.log.get(calls.log.size() - 1));
-		click(panel, "Not now");
-		assertEquals("dismissConnect", calls.log.get(calls.log.size() - 1));
-
-		panel.setConnectDismissed(true);
-		flush();
-		String text = allText(panel);
-		assertTrue(text.contains("NOT CONNECTED"));
-		assertFalse("the card folds away", text.contains("IP address"));
-		click(panel, "Join…");
-		assertTrue("Join… opens the card again", allText(panel).contains("IP address"));
-	}
-
-	@Test
-	public void waitingShowsTheCodeAndCancels() throws Exception
-	{
-		Calls calls = new Calls();
-		DreamChasersPanel panel = newPanel(calls);
-		panel.setConnected(true);
-		panel.setConnectWaiting("K7QX", null);
-		flush();
-		String text = allText(panel);
-		assertTrue(text.contains("Waiting for you to approve in the browser"));
-		assertTrue(text.contains("K7QX"));
-		assertTrue("Verify for Discord stays while the browser wait runs", text.contains("VERIFY FOR DISCORD"));
-		assertTrue("says which Discord account up front", text.contains("use your main one"));
-		snapshot(panel, "connect-waiting");
-		// still pending after 2 minutes (ConnectFlow.STILL_WAITING_AFTER): the hint sits under the code
-		panel.setConnectWaiting("K7QX", cc.dreamchasers.clan.DreamChasersClanPlugin.STILL_WAITING);
-		flush();
-		text = allText(panel);
-		assertTrue(text.contains("K7QX") && text.contains("Still waiting for Discord?"));
-		DreamChasersPanel fresh = newPanel(new Calls());   // a fresh panel: snapshot() measures one layout, not a change
-		fresh.setConnected(true);
-		fresh.setConnectWaiting("K7QX", cc.dreamchasers.clan.DreamChasersClanPlugin.STILL_WAITING);
-		flush();
-		snapshot(fresh, "connect-still-waiting");
-		click(panel, "Cancel");
-		assertEquals("cancelConnect", calls.log.get(calls.log.size() - 1));
-
-		panel.setConnectWaiting(null, "You pressed Deny in the browser, so nothing was linked.");
-		flush();
-		assertTrue(allText(panel).contains("pressed Deny"));
-
-		panel.setSignedInAs("Maho z h");
-		flush();
-		assertFalse("the card goes once signed in", allText(panel).contains("JOIN DREAM CHASERS"));
-	}
-
-	@Test
-	public void joinStepsOptInThenOpenTheirPages() throws Exception
-	{
-		Calls calls = new Calls();
-		DreamChasersPanel panel = newPanel(calls);
-		flush();
-		// no links yet (they load once Connect is on): step 1 says so and opens the join page, which has the invite
-		assertFalse(visibleButton(panel, "Join our Discord"));
-		click(panel, "Get the Discord invite");
-		assertEquals(List.of("optIn", "open https://dream-chasers.cc/join"), calls.log.subList(calls.log.size() - 2, calls.log.size()));
-		click(panel, "Show Verify for Discord");
-		assertEquals("optIn", calls.log.get(calls.log.size() - 1));
-
-		panel.setConnected(true);
-		LinksResponse links = GSON.fromJson(read("links.json"), LinksResponse.class);
-		links.setDiscord("https://discord.gg/example");
-		panel.showLinks(new ApiResult<>(ApiResult.Status.OK, links, NOW, null));
-		flush();
-		String text = allText(panel);
-		assertTrue(text.contains("VERIFY FOR DISCORD"));
-		assertTrue(text, text.contains("Press <b>Verify in browser</b> in <b>Verify for Discord</b> below, then approve on the page it opens."));
-		assertFalse("with the invite the step needs no pointer", text.contains("The invite is on"));
-		assertFalse("the box below has the button now", visibleButton(panel, "Show Verify for Discord"));
-		assertFalse("the typed code waits behind its button", visibleButton(panel, "Get a code"));
-		click(panel, "Join our Discord");
-		assertEquals(List.of("optIn", "open https://discord.gg/example"), calls.log.subList(calls.log.size() - 2, calls.log.size()));
-		snapshot(panel, "join-steps");
 	}
 
 	@Test
@@ -1179,7 +1214,7 @@ public class DreamChasersPanelTest
 		flush();
 	}
 
-	/** The player menu's items, in order; the first (who) must be greyed out, the rest not. */
+	/** The player menu's items, in order; a greyed-out one starts with "~". Names are never HTML. */
 	private static List<String> menuLabels(DreamChasersPanel panel) throws Exception
 	{
 		List<String> out = new ArrayList<>();
@@ -1190,8 +1225,8 @@ public class DreamChasersPanelTest
 				if (c instanceof javax.swing.JMenuItem)
 				{
 					javax.swing.JMenuItem item = (javax.swing.JMenuItem) c;
-					assertEquals(item.getText(), !out.isEmpty(), item.isEnabled());
-					out.add(item.getText());
+					assertEquals(Boolean.TRUE, item.getClientProperty("html.disable"));
+					out.add((item.isEnabled() ? "" : "~") + item.getText());
 				}
 			}
 		});
@@ -1206,6 +1241,7 @@ public class DreamChasersPanelTest
 			{
 				if (c instanceof javax.swing.JMenuItem && label.equals(((javax.swing.JMenuItem) c).getText()))
 				{
+					assertTrue(label + " is greyed out", c.isEnabled());
 					((javax.swing.JMenuItem) c).doClick();
 					return;
 				}
@@ -1259,26 +1295,6 @@ public class DreamChasersPanelTest
 			}
 		}
 		return true;
-	}
-
-	private static javax.swing.JTextField enabledField(Component c)
-	{
-		if (c instanceof javax.swing.JTextField && c.isEnabled() && isVisibleUpTo(c))
-		{
-			return (javax.swing.JTextField) c;
-		}
-		if (c instanceof Container)
-		{
-			for (Component child : ((Container) c).getComponents())
-			{
-				javax.swing.JTextField f = enabledField(child);
-				if (f != null)
-				{
-					return f;
-				}
-			}
-		}
-		return null;
 	}
 
 	private static <T> T find(Container c, Class<T> type)

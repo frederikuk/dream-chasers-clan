@@ -19,7 +19,7 @@ import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 /**
- * "Verify in browser" (one-click verified join): the plugin starts a pending
+ * "Sign in with Discord" in the player menu (one-click verified join, formerly "Verify in browser"): the plugin starts a pending
  * verify with the player's own clan facts, opens the site's page, and polls
  * until the member approves or denies it there; the site then hands this
  * plugin its own token. Nothing is sent unless the player's own clan record
@@ -69,15 +69,15 @@ public class VerifyFlow extends BrowserApproval<JoinAttestResponse, VerifyFlow.J
 		}
 	}
 
-	static final String EXPIRED = "That request has expired. Press Verify in browser again.";
-	static final String USED = "That request was already used. If you approved it, press Verify in browser again to sign this PC in.";
+	static final String EXPIRED = "That request has expired. Try Sign in with Discord again from the menu at the top right.";
+	static final String USED = "That request was already used. If you approved it, try Sign in with Discord again from the menu at the top right to sign this PC in.";
 	/**
 	 * After the verified line: a one-click approval shows the Discord account
 	 * only now, so someone who saw the link and approved it with their own
 	 * Discord doesn't go unnoticed.
 	 */
 	static final String NOT_YOU = " Not your Discord account? Press Sign out in the player menu (top right) and tell an officer.";
-	static final String CHANGED = "You changed account or clan since you pressed Verify, so this PC didn't keep the sign-in. Press Verify in browser again.";
+	static final String CHANGED = "You changed account or clan since you started signing in, so this PC didn't keep the sign-in. Try Sign in with Discord again from the menu at the top right.";
 
 	private final DrmApiClient api;
 	private final Supplier<OwnClan.Reading> ownClan;
@@ -174,12 +174,12 @@ public class VerifyFlow extends BrowserApproval<JoinAttestResponse, VerifyFlow.J
 	@Override
 	String timedOut()
 	{
-		return "No answer from the browser within 10 minutes. Press Verify in browser to try again.";
+		return "No answer from the browser within 10 minutes. Try Sign in with Discord again from the menu at the top right.";
 	}
 
 	@Override
 	String badLink()
 	{
-		return "That link didn't look right. Try Verify in browser again later.";
+		return "That link didn't look right. Try Sign in with Discord again later, from the menu at the top right.";
 	}
 }

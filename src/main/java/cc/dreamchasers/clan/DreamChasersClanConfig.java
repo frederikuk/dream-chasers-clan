@@ -79,7 +79,7 @@ public interface DreamChasersClanConfig extends Config
 	@ConfigItem(
 		keyName = ENABLE_ALL_KEY,
 		name = "Enable everything",
-		description = TIP + "Sign in first (follow the steps in the Dream Chasers panel); until you're signed in it turns itself straight back off and the panel says why. "
+		description = TIP + "Sign in first (tick Connect to dream-chasers.cc below, or use the player menu at the top right of the Dream Chasers panel); until you're signed in it turns itself straight back off and the panel says why. "
 			+ "Then it turns on every Dream Chasers feature below: Post personal bests, Post collection log, "
 			+ "Clan splash, Clan tile packs, Join DRM Live and Share raid stats. Ticking it also turns Connect back on if you'd turned it off; untick to turn them all off, Connect included. It ticks itself once you have turned every one of them on. "
 			+ "RuneLite only shows the new ticks once you close and reopen these settings. "
@@ -97,8 +97,9 @@ public interface DreamChasersClanConfig extends Config
 		keyName = CONNECT_KEY,
 		name = "Connect to dream-chasers.cc",
 		description = TIP + "Fetch the clan's events, competition standings, Hall of Fame, featured splash and links from dream-chasers.cc for the sidebar panel. "
-			+ "Pressing Connect in the panel sends your RSN to sign you in. Also allows Verify for Discord in the panel, which reads only your own clan record and, when you press Confirm, "
-			+ "sends your RSN, the clan name and a hashed account id (never the account id itself)" + TIP_END,
+			+ "Ticking it also signs you in: once you're logged in to the game and in DRM Chasers, your browser opens dream-chasers.cc to sign in with Discord, "
+			+ "which verifies your RSN for the clan's Discord too. For that it reads only your own clan record and sends your RSN, the clan name and a hashed account id "
+			+ "(never the account id itself). Sign in again, verify another name or enter a code from the site in the player menu at the top right of the panel" + TIP_END,
 		warning = "This feature submits your IP address to a 3rd-party server not controlled or verified by RuneLite developers",
 		section = CONNECT_SECTION,
 		position = 0

@@ -69,7 +69,7 @@ final class EnableAll
 	/**
 	 * One settings change, as ConfigChanged reports it. Returns true when
 	 * "Enable everything" was just ticked. It only flips settings: it never
-	 * starts Connect or opens the browser (the panel's Connect card does that).
+	 * starts Connect or opens the browser (ticking Connect, or the panel's player menu, does that).
 	 *
 	 * <ul>
 	 * <li>Ticked while not signed in: unticks itself and changes nothing else.</li>
