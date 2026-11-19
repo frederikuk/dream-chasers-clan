@@ -192,7 +192,13 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	/** Set when the member takes a stream slot, cleared when they leave or withdraw. */
 	private volatile boolean liveOnStream;
 	/** Names the site has verified to this member (GET /plugin/me); empty until known. */
-	private volatile List<String> verifiedNames = Collections.emptyList();
+	volatile List<String> verifiedNames = Collections.emptyList();
+	/**
+	 * Set when the logged-in name is needed for the Verify fold but the game
+	 * hasn't given it yet (it has none at the LOGGED_IN event itself): checked
+	 * again on each game tick until it has. Client thread only.
+	 */
+	private boolean verifiedDue;
 	/** Raid-stat answers in a row saying the member isn't on a stream slot. */
 	private int raidNotShown;
 	/** After this many, the member is taken as off the stream and raid stats stop until they join again. */
@@ -397,7 +403,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	{
 		backfillDue = true;
 		clanCheckDue = true;
-		updateVerified();     // another account may be verified, or not
+		verifiedNeeded();     // another account may be verified, or not
 		DreamChasersPanel panel = this.panel;
 		if (panel != null && panel.isShowing())
 		{
@@ -519,6 +525,41 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		backfillTick();
 		rosterTick();
 		pickupTick();
+		verifiedTick();
+	}
+
+	/** The Verify fold needs the logged-in name; the game gives it a tick or so after LOGGED_IN. Client thread. */
+	void verifiedNeeded()
+	{
+		verifiedDue = true;
+	}
+
+	/** Each tick until the game has the player's name, then the Verify fold is checked once. Client thread. */
+	void verifiedTick()
+	{
+		if (!verifiedDue || !loggedIn())
+		{
+			return;
+		}
+		String name = localName();
+		if (name != null)
+		{
+			verifiedDue = false;
+			applyVerified(name);
+		}
+	}
+
+	/** Client thread. */
+	boolean loggedIn()
+	{
+		return client.getGameState() == GameState.LOGGED_IN;
+	}
+
+	/** The logged-in player's name, or null while the game hasn't sent it. Client thread. */
+	String localName()
+	{
+		Player me = client.getLocalPlayer();
+		return me == null ? null : me.getName();
 	}
 
 	// ---- Verified join: the player's own clan record ----
@@ -1980,25 +2021,46 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	 */
 	private void updateVerified()
 	{
-		DreamChasersPanel panel = this.panel;
-		if (panel == null)
+		withRsn(this::applyVerified);
+	}
+
+	/** Client thread. A null name while logged in means the game hasn't sent it yet: try again next tick. */
+	void applyVerified(String rsn)
+	{
+		if (rsn == null && loggedIn())
 		{
-			return;
+			verifiedNeeded();
+			return;     // keep what the panel shows until the name is known
 		}
-		List<String> names = verifiedNames;
-		withRsn(rsn ->
+		showVerifiedAs(verifiedMatch(rsn, verifiedNames));
+	}
+
+	/** The panel's Verify fold: the matched name, or null to show Verify for Discord. */
+	void showVerifiedAs(String match)
+	{
+		DreamChasersPanel panel = this.panel;
+		if (panel != null)
 		{
-			String key = rsnKey(rsn);
-			String match = null;
-			for (String n : names)
-			{
-				if (key != null && key.equals(rsnKey(n)))
-				{
-					match = rsn;
-				}
-			}
 			panel.setVerifiedAs(match);
-		});
+		}
+	}
+
+	/** {@code rsn} when it is one of {@code names} (as the game writes names), else null. */
+	static String verifiedMatch(String rsn, List<String> names)
+	{
+		String key = rsnKey(rsn);
+		if (key == null || names == null)
+		{
+			return null;
+		}
+		for (String n : names)
+		{
+			if (key.equals(rsnKey(n)))
+			{
+				return rsn;
+			}
+		}
+		return null;
 	}
 
 	/** RSNs compare without case, and spaces, underscores and hyphens read alike in game. */
