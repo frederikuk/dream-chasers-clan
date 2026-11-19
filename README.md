@@ -165,9 +165,9 @@ reads.
   inside the minute is sent by itself once the minute is up, and the panel
   says when ("Changed again: sending at 12:35"). If the site was busy or
   couldn't be reached, the same list goes once more a minute later.
-- The player menu (top right) shows one greyed-out line, like "Roster sent 12:34: 2 added, 1 rank changed".
-  If the site says you're not an officer, the sync stops until you log in
-  again or tick the setting again, and that line says why.
+- The player menu (top right) shows "Roster sync is on". If the site says
+  you're not an officer, the sync stops until you log in again or tick the
+  setting again, and the menu shows "Roster sync is off".
 
 ### Verify pickup
 
@@ -235,12 +235,12 @@ To put yourself in, turn on **Clan splash**, then:
    off your weapon and shield first: your character holds the heart in both
    hands.
 3. Your splash is made within about an hour. If the splash maker can't use the
-   pose, the panel says why; stand still and press **Send a new pose**. You can
-   send one every 10 minutes.
+   pose, the panel says why; stand still and press the **refresh** icon next to
+   the featured name to send a new pose. You can send one every 10 minutes.
 
-**Remove me** takes you out at any time, and the site deletes your model and
+The **x** icon (Remove me) takes you out at any time, and the site deletes your model and
 splash, and your profile stops using it. The plugin sends only your own character's shape, and only when you
-press the button.
+press the button. The **eye** icon opens your profile on dream-chasers.cc.
 
 ## Development
 

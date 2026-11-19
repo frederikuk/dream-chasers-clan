@@ -997,11 +997,10 @@ public class DreamChasersPanelTest
 		panel.setRosterStatus("Roster sent 12:34: 2 added, 1 rank changed");
 		flush();
 		assertFalse("never in the sidebar", allText(panel).contains("Roster"));
-		assertTrue(menuLabels(panel).contains("~Roster sent 12:34: 2 added, 1 rank changed."));
+		assertTrue(menuLabels(panel).contains("~Roster sync is on"));
 		panel.setRosterStatus("Roster sync stopped: Only officers can sync the roster. Roster sync is off until you log in again.");
 		flush();
-		assertTrue("no second full stop after the site's own",
-			menuLabels(panel).contains("~Roster sync stopped: Only officers can sync the roster. Roster sync is off until you log in again."));
+		assertTrue(menuLabels(panel).contains("~Roster sync is off"));
 		panel.setRosterStatus(null);
 		flush();
 		assertFalse(menuLabels(panel).stream().anyMatch(l -> l.contains("Roster")));
@@ -1072,7 +1071,8 @@ public class DreamChasersPanelTest
 		panel.showFeaturedImage("Vorki <i>", pic);
 		flush();
 		String text = allText(panel);
-		assertTrue(text.contains("Featured: <b>Vorki &lt;i&gt;</b>"));
+		assertTrue("the featured member in bold, escaped", text.contains("<b>Vorki &lt;i&gt;</b>"));
+		assertFalse(text.contains("Featured:"));
 		DreamChasersPanel.SplashImage img = (DreamChasersPanel.SplashImage) named(panel, "splashImage");
 		assertEquals("its shape kept when drawn", 113, img.heightFor(201));
 		assertEquals("a fixed height, made for RuneLite's panel width", 127, img.getPreferredSize().height);
@@ -1101,15 +1101,25 @@ public class DreamChasersPanelTest
 		text = allText(panel);
 		assertTrue(text.contains("arms not found"));
 		assertFalse("no consent once in", text.contains("gear included"));
+		assertFalse("the long pool lines are gone", text.contains("in the pool"));
 		snapshot(panel, "splash-rejected");
-		click(panel, "Remove me");
+		clickNamed(panel, "splashRemove");
 		assertEquals("removeMe", calls.log.get(calls.log.size() - 1));
+		panel.splashDone(null, false);
+		flush();
+		clickNamed(panel, "splashResend");
+		assertEquals("featureMe", calls.log.get(calls.log.size() - 1));
+		panel.splashDone(null, false);
+		flush();
+		clickNamed(panel, "splashView");
+		assertEquals("the eye opens the member's own profile", "open https://dream-chasers.cc/clan/x", calls.log.get(calls.log.size() - 1));
 
 		panel.splashDone(null, false);
 		panel.setSplashEnabled(false);
 		flush();
-		assertTrue("Remove me stays with the setting off", findButton(panel, "Remove me") != null);
-		assertTrue(findButton(panel, "Send a new pose") == null);
+		assertTrue("Remove me stays with the setting off", findNamed(panel, "splashRemove") != null);
+		assertTrue(findNamed(panel, "splashResend") == null);
+		assertTrue(findNamed(panel, "splashView") != null);
 	}
 
 	@Test

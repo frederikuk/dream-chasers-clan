@@ -895,9 +895,8 @@ public class DreamChasersPanel extends PluginPanel
 		String roster = rosterLine;
 		if (roster != null)
 		{
-			// officer roster sync's state: information only, so greyed out; the site's own messages already end in a full stop
-			boolean ended = roster.endsWith(".") || roster.endsWith("!") || roster.endsWith("?");
-			menu.add(greyed(roster + (ended ? "" : ".")));
+			// officer roster sync: one short state line; the details are in the plugin's log
+			menu.add(greyed(roster.startsWith("Roster sync stopped") ? "Roster sync is off" : "Roster sync is on"));
 		}
 		menu.addSeparator();
 		// the server invite, from /links; before links load, the join page (it has the invite too)
@@ -1329,49 +1328,59 @@ public class DreamChasersPanel extends PluginPanel
 		JPanel bottom = splashPart(0, 8);
 		ApiResult<FeaturedResponse> fr = featuredResult;
 		FeaturedResponse f = fr == null ? null : fr.getValue();
+		boolean mine = signedInAs != null && splashOptedIn;
+		ModelStatusResponse ms = modelStatus == null ? null : modelStatus.getValue();
+		String st = ms == null || ms.getStatus() == null ? "" : ms.getStatus();
 		if (featuredImage != null)
 		{
 			splash.add(featuredImage);     // edge to edge
 			bottom.add(Box.createVerticalStrut(4));
-			bottom.add(text("Featured: <b>" + esc(featuredImageRsn) + "</b>", Brand.GOLD));
 		}
-		else if (f != null && !notBlank(f.getRsn()))
+		// one row: the featured member in bold, then (opted in) resubmit, remove and view as icons
+		JPanel line = new JPanel(new BorderLayout(4, 0));
+		line.setOpaque(false);
+		line.setAlignmentX(Component.LEFT_ALIGNMENT);
+		String who = featuredImage != null ? "<b>" + esc(featuredImageRsn) + "</b>"
+			: f != null && !notBlank(f.getRsn()) ? "Nobody is featured yet."
+			: fr != null && f == null ? esc(fr.getMessage()) : null;
+		if (who != null)
 		{
-			bottom.add(text("Nobody is featured yet.", Brand.MUTED));
+			JLabel name = new JLabel(html(who));
+			name.setForeground(featuredImage != null ? Brand.GOLD : Brand.MUTED);
+			name.setFont(FontManager.getRunescapeSmallFont());
+			name.setName("splashName");
+			line.add(name, BorderLayout.CENTER);
 		}
-		else if (fr != null && f == null)
+		if (mine)
 		{
-			bottom.add(text(esc(fr.getMessage()), Brand.MUTED));
+			JPanel icons = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 4, 0));
+			icons.setOpaque(false);
+			if (splashEnabled)
+			{
+				icons.add(iconButton("splashResend", ICON_REFRESH, "Send a new pose (stand still in game first)",
+					() -> splashAction(listener::featureMe)));
+			}
+			icons.add(iconButton("splashRemove", ICON_REMOVE, "Remove me from the clan splash",
+				() -> splashAction(listener::removeMe)));
+			icons.add(iconButton("splashView", ICON_VIEW, splashViewTip(st), this::viewMySplash));
+			line.add(icons, BorderLayout.EAST);
+		}
+		line.setMaximumSize(new Dimension(Integer.MAX_VALUE, line.getPreferredSize().height));
+		if (who != null || mine)
+		{
+			bottom.add(line);
 		}
 
 		if (signedInAs != null)
 		{
-			if (splashOptedIn)
+			if (mine)
 			{
-				ModelStatusResponse ms = modelStatus == null ? null : modelStatus.getValue();
-				String st = ms == null || ms.getStatus() == null ? "" : ms.getStatus();
-				switch (st)
+				// only what needs the member: a pose the splash maker couldn't use
+				if ("rejected".equals(st))
 				{
-					case "ok":
-						bottom.add(text("You're in the pool: any day could be yours.", Brand.TEXT));
-						break;
-					case "rejected":
-						bottom.add(text("The splash maker couldn't use your last pose"
-							+ (notBlank(ms.getReason()) ? ": " + esc(ms.getReason()) + "." : ". Stand still in game and press <b>Send a new pose</b>."), Brand.WARN));
-						break;
-					case "queued":
-						bottom.add(text("Your model is sent. Your splash is being made; check back in an hour.", Brand.TEXT));
-						break;
-					default:
-						bottom.add(text("You're signed up for the clan splash.", Brand.TEXT));
+					bottom.add(text("Your last pose couldn't be used"
+						+ (notBlank(ms.getReason()) ? ": " + esc(ms.getReason()) + "." : ". Stand still in game and send a new pose."), Brand.WARN));
 				}
-				JPanel b = row();
-				if (splashEnabled)
-				{
-					b.add(button("Send a new pose", () -> splashAction(listener::featureMe)));
-				}
-				b.add(button("Remove me", () -> splashAction(listener::removeMe)));
-				bottom.add(b);
 			}
 			else if (!splashEnabled)
 			{
@@ -1388,13 +1397,71 @@ public class DreamChasersPanel extends PluginPanel
 			{
 				bottom.add(text("Working…", Brand.MUTED));
 			}
-			else if (splashMessage != null)
+			else if (splashMessage != null && (splashMessageIsError || !mine))
 			{
 				bottom.add(text(esc(splashMessage), splashMessageIsError ? Brand.WARN : Brand.MUTED));
 			}
 		}
 		splash.add(bottom);
 		done(splash);
+	}
+
+	static final ImageIcon ICON_REFRESH = icon("icon_refresh.png");
+	static final ImageIcon ICON_REMOVE = icon("icon_remove.png");
+	static final ImageIcon ICON_VIEW = icon("icon_view.png");
+
+	private static ImageIcon icon(String file)
+	{
+		return new ImageIcon(ImageUtil.loadImageResource(DreamChasersPanel.class, "/cc/dreamchasers/clan/" + file));
+	}
+
+	/** A 14 px gold icon as a flat button, with its action in the tooltip. */
+	private static JButton iconButton(String name, ImageIcon icon, String tip, Runnable action)
+	{
+		JButton b = flat(new JButton(icon));
+		b.setName(name);
+		b.setToolTipText(tip);
+		Dimension size = new Dimension(18, 18);
+		b.setPreferredSize(size);
+		b.setMinimumSize(size);
+		b.setMaximumSize(size);
+		b.addActionListener(e -> action.run());
+		return b;
+	}
+
+	/** The eye's tooltip says where the member's own splash is at. */
+	private static String splashViewTip(String status)
+	{
+		switch (status)
+		{
+			case "ok":
+				return "View my splash on dream-chasers.cc (you're in the pool)";
+			case "queued":
+				return "View my profile on dream-chasers.cc (your splash is being made)";
+			default:
+				return "View my profile on dream-chasers.cc";
+		}
+	}
+
+	/** The eye: the member's own profile, which shows their splash model. */
+	private void viewMySplash()
+	{
+		ModelStatusResponse ms = modelStatus == null ? null : modelStatus.getValue();
+		String rsn = ms != null && ms.getFeatured() != null && notBlank(ms.getFeatured().getRsn()) ? ms.getFeatured().getRsn()
+			: verifiedAs != null ? verifiedAs : signedInAs;
+		if (!notBlank(rsn))
+		{
+			openSite();
+			return;
+		}
+		try
+		{
+			go(linkOr(LinksResponse::getSite, SITE) + "/clan/" + java.net.URLEncoder.encode(rsn, "UTF-8").replace("+", "%20"), safeLinks.site());
+		}
+		catch (java.io.UnsupportedEncodingException e)
+		{
+			openSite();
+		}
 	}
 
 	/** One padded part of the splash section; its text lines up with the other sections' text. */
