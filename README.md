@@ -162,12 +162,11 @@ reads.
   game shows it, and your own RSN. Never locations, gear or stats.
 - **When:** a moment after you close the Members screen, and only when the list
   has changed since the site last took it. At most once a minute: a change
-  inside the minute is sent by itself once the minute is up, and the panel
-  says when ("Changed again: sending at 12:35"). If the site was busy or
-  couldn't be reached, the same list goes once more a minute later.
-- The player menu (top right) shows "Roster sync is on". If the site says
-  you're not an officer, the sync stops until you log in again or tick the
-  setting again, and the menu shows "Roster sync is off".
+  inside the minute is sent by itself once the minute is up. If the site was
+  busy or couldn't be reached, the same list goes once more a minute later.
+- The player menu (top right of the panel) shows "Roster sync is on". If the
+  site says you're not an officer, the sync stops until you log in again or
+  tick the setting again, and the menu shows "Roster sync is off".
 
 ### Verify pickup
 
@@ -175,9 +174,9 @@ The same setting verifies newcomers for you. A member on mobile gets a witness
 code at dream-chasers.cc/join and says it in clan chat, or PMs it to you. The
 plugin sends that code and the sender's name (which the game sets, so it
 proves the account) to the site, and the site verifies them. Nobody types
-anything. The panel shows "Verified Bob 12:34", or says when a request needs
-an officer to look at it on the site (a new Discord account, a disputed name,
-an officer-rank name and a few others).
+anything. A request that needs an officer to look at it (a new Discord
+account, a disputed name, an officer-rank name and a few others) waits on the
+site's officer joins page.
 
 - **What it reads:** clan chat and the PMs you receive. Only a line holding a
   code (`DRM-` and six characters) leaves your PC, and a PM only from someone

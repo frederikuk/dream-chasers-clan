@@ -49,6 +49,12 @@ public class VerifiedFoldTest
 			applied.add(match);
 		}
 
+		@Override
+		void withRsn(java.util.function.Consumer<String> then)
+		{
+			then.accept(localName());     // the client thread, inline
+		}
+
 		void send(GameState state)
 		{
 			GameStateChanged e = new GameStateChanged();
@@ -113,6 +119,17 @@ public class VerifiedFoldTest
 		p.names.add("Fred525");
 		p.verifiedTick();
 		assertEquals(List.of("Fred525"), p.applied);
+	}
+
+	@Test
+	public void aNameJustVerifiedFoldsAtOnce()
+	{
+		// 19 Nov 2026: after Sign in with Discord the menu still said "Connected as" and offered Verify again
+		Scripted p = verifiedAs("Fred525");
+		p.names.add("Tadeko");
+		p.addVerified("Tadeko");
+		assertEquals("no /me refresh needed", List.of("Tadeko"), p.applied);
+		assertEquals(List.of("Fred525", "Tadeko"), p.verifiedNames);
 	}
 
 	@Test

@@ -1779,7 +1779,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	/** Shown after the code once Sign in with Discord has waited 2 minutes (ConnectFlow.STILL_WAITING_AFTER). */
 	public static final String VERIFY_STILL_WAITING = "Still waiting? Check your browser is signed in to discord.com "
 		+ "with your main Discord account (it needs a verified email or phone). Then press Cancel in the menu at the top right "
-		+ "and try Sign in with Discord again.";
+		+ "and try again from there.";
 
 	/**
 	 * The player menu's Sign in with Discord (or Verify NAME for Discord), and
@@ -1823,9 +1823,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 			{
 				panel.verifiedDone(message);     // stays through the fold to verified that follows
 				signedIn(token, name);
-				List<String> v = new ArrayList<>(verifiedNames);
-				v.add(name);
-				verifiedNames = v;
+				addVerified(name);
 			}
 
 			@Override
@@ -1877,9 +1875,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 			{
 				panel.verifiedDone(message);     // stays through the fold to verified that follows
 				signedIn(token, name);
-				List<String> v = new ArrayList<>(verifiedNames);
-				v.add(name);
-				verifiedNames = v;
+				addVerified(name);
 			}
 
 			@Override
@@ -2123,7 +2119,8 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	}
 
 	/** The logged-in player's name (null at the login screen), read on the client thread. */
-	private void withRsn(Consumer<String> then)
+	/** Runs {@code then} on the client thread with the logged-in name (null when there's none); overridden in tests. */
+	void withRsn(Consumer<String> then)
 	{
 		clientThread.invokeLater(() ->
 		{
@@ -2170,6 +2167,18 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		rosterLine = null;
 		rosterAnswer = null;
 		rosterPending = false;
+	}
+
+	/**
+	 * A sign-in or Verify NAME just verified {@code name}: the player menu
+	 * folds to "Verified as NAME" now, not at the next {@code /plugin/me}.
+	 */
+	void addVerified(String name)
+	{
+		List<String> v = new ArrayList<>(verifiedNames);
+		v.add(name);
+		verifiedNames = v;
+		updateVerified();
 	}
 
 	/**

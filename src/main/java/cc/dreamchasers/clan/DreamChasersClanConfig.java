@@ -79,7 +79,7 @@ public interface DreamChasersClanConfig extends Config
 	@ConfigItem(
 		keyName = ENABLE_ALL_KEY,
 		name = "Enable everything",
-		description = TIP + "Sign in first (tick Connect to dream-chasers.cc below, or use the player menu at the top right of the Dream Chasers panel); until you're signed in it turns itself straight back off and the panel says why. "
+		description = TIP + "Sign in first (tick Connect to dream-chasers.cc above, or use the player menu at the top right of the Dream Chasers panel); until you're signed in it turns itself straight back off and the panel says why. "
 			+ "Then it turns on every Dream Chasers feature below: Post personal bests, Post collection log, "
 			+ "Clan splash, Clan tile packs, Join DRM Live and Share raid stats. Ticking it also turns Connect back on if you'd turned it off; untick to turn them all off, Connect included. It ticks itself once you have turned every one of them on. "
 			+ "RuneLite only shows the new ticks once you close and reopen these settings. "

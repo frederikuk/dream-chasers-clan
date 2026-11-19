@@ -92,7 +92,7 @@ public class DreamChasersPanel extends PluginPanel
 		+ "&bull; The plugin sends your character's 3D shape, gear included, to dream-chasers.cc. Nothing else, and no one else's.<br>"
 		+ "&bull; It becomes the dragonstone statue on the splash, with your RSN. The clan sees it in this panel and on the site, and it may be shown on the DRM Live stream.<br>"
 		+ "&bull; The same model is your profile picture and 3D view on your clan profile on the site.<br>"
-		+ "&bull; Press <b>Remove me</b> at any time: the site deletes your model and splash, and your profile stops using it.<br>"
+		+ "&bull; Press the <b>x</b> beside your name (Remove me from the clan splash) at any time: the site deletes your model and splash, and your profile stops using it.<br>"
 		+ "Stand still in game, then press the button.";
 	/** The player button in the header's top right corner, like the site's account icon. */
 	static final int PLAYER_SIZE = 30;
@@ -808,7 +808,7 @@ public class DreamChasersPanel extends PluginPanel
 		});
 	}
 
-	/** After Feature me or Remove me; {@code message} goes under the buttons. */
+	/** After Feature me or Remove me; {@code message} goes under the splash row (an error always, else only before opting in). */
 	public void splashDone(String message, boolean isError)
 	{
 		onEdt(() ->
@@ -862,12 +862,12 @@ public class DreamChasersPanel extends PluginPanel
 		menu.add(greyed(signedIn ? whoLine() : "Not signed in"));
 		if (verifyWaitCode != null)
 		{
-			menu.add(greyed("Approve in your browser: " + verifyWaitCode));
+			addGreyed(menu, "Approve in your browser: " + verifyWaitCode);
 			menu.add(menuItem("Cancel", this::stopWaiting));
 		}
 		else if (!connected)
 		{
-			menu.add(greyed("Turn on Connect in the plugin settings"));
+			addGreyed(menu, "Turn on Connect in the plugin settings");
 		}
 		else if (notInGame())
 		{
@@ -876,27 +876,30 @@ public class DreamChasersPanel extends PluginPanel
 				menu.add(greyed("Log in to the game to sign in"));
 			}
 		}
+		else if (signedIn && verifiedAs != null)
+		{
+			// verified: nothing left to do, whatever the clan record says (it may not have loaded, or there is none)
+		}
 		else if (verifyBlocker != null)
 		{
-			menu.add(greyed(verifyBlocker));
+			addGreyed(menu, verifyBlocker);
 		}
-		else if (!signedIn)
+		else
 		{
-			menu.add(startItem("Sign in with Discord"));
-		}
-		else if (verifiedAs == null)
-		{
-			menu.add(startItem("Verify " + verifyRsn + " for Discord"));
-		}
-		if (connected && !verifyBusy && verifyWaitCode == null)
-		{
-			menu.add(menuItem("Enter a code from the site…", this::enterCode));
+			menu.add(startItem(signedIn ? "Verify " + verifyRsn + " for Discord" : "Sign in with Discord"));
+			if (!verifyBusy)
+			{
+				// the typed-code route: only where verifying is still to do, never for a verified name
+				menu.add(menuItem("Enter a code from the site…", this::enterCode));
+			}
 		}
 		String roster = rosterLine;
 		if (roster != null)
 		{
-			// officer roster sync: one short state line; the details are in the plugin's log
-			menu.add(greyed(roster.startsWith("Roster sync stopped") ? "Roster sync is off" : "Roster sync is on"));
+			// officer roster sync and verify pickup, as one short line (Frederik, 19 Nov: "Just \"Roster Sync is On\" is
+			// enough"): off once the site has stopped either, else on
+			menu.add(greyed(roster.startsWith("Roster sync stopped") || roster.startsWith("Verify pickup stopped")
+				? "Roster sync is off" : "Roster sync is on"));
 		}
 		menu.addSeparator();
 		// the server invite, from /links; before links load, the join page (it has the invite too)
@@ -914,6 +917,56 @@ public class DreamChasersPanel extends PluginPanel
 	private boolean notInGame()
 	{
 		return verifyRsn == null && (verifyBlocker == null || cc.dreamchasers.clan.OwnClan.LOGGED_OUT_BLOCKER.equals(verifyBlocker));
+	}
+
+	/**
+	 * Characters per greyed menu line. The menu opens right-aligned under the
+	 * player button, so a line much wider than the panel (225 px) would spill
+	 * out over the game.
+	 */
+	static final int MENU_LINE_CHARS = 38;
+
+	/** A greyed-out line, split at spaces into lines of at most {@link #MENU_LINE_CHARS} (plain text, never HTML). */
+	private static void addGreyed(JPopupMenu menu, String text)
+	{
+		for (String line : wrapMenuLine(text))
+		{
+			menu.add(greyed(line));
+		}
+	}
+
+	static List<String> wrapMenuLine(String text)
+	{
+		List<String> out = new ArrayList<>();
+		StringBuilder line = new StringBuilder();
+		for (String word : text.trim().split("\\s+"))
+		{
+			while (word.length() > MENU_LINE_CHARS)
+			{
+				if (line.length() > 0)
+				{
+					out.add(line.toString());
+					line.setLength(0);
+				}
+				out.add(word.substring(0, MENU_LINE_CHARS));
+				word = word.substring(MENU_LINE_CHARS);
+			}
+			if (line.length() > 0 && line.length() + 1 + word.length() > MENU_LINE_CHARS)
+			{
+				out.add(line.toString());
+				line.setLength(0);
+			}
+			if (line.length() > 0)
+			{
+				line.append(' ');
+			}
+			line.append(word);
+		}
+		if (line.length() > 0)
+		{
+			out.add(line.toString());
+		}
+		return out;
 	}
 
 	private static JMenuItem greyed(String label)
@@ -1378,8 +1431,12 @@ public class DreamChasersPanel extends PluginPanel
 				// only what needs the member: a pose the splash maker couldn't use
 				if ("rejected".equals(st))
 				{
+					// the refresh icon that sends a new pose is only there with the Clan splash setting on
+					String again = splashEnabled ? "Stand still in game and send a new pose."
+						: "Turn on <b>Clan splash</b> in this plugin's settings to send a new pose.";
 					bottom.add(text("Your last pose couldn't be used"
-						+ (notBlank(ms.getReason()) ? ": " + esc(ms.getReason()) + "." : ". Stand still in game and send a new pose."), Brand.WARN));
+						+ (notBlank(ms.getReason()) ? ": " + esc(ms.getReason()) + "." + (splashEnabled ? "" : " " + again)
+						: ". " + again), Brand.WARN));
 				}
 			}
 			else if (!splashEnabled)

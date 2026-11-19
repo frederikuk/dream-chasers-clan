@@ -10,6 +10,7 @@ package cc.dreamchasers.clan.ui;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import cc.dreamchasers.clan.OwnClan;
 import cc.dreamchasers.clan.api.ApiResult;
 import cc.dreamchasers.clan.api.CompetitionResponse;
 import cc.dreamchasers.clan.api.EventsResponse;
@@ -385,7 +386,7 @@ public class DreamChasersPanelTest
 		assertFalse("no Links section", text.contains("DREAM CHASERS\n"));
 		assertNoSignInBoxes(panel);
 		assertEquals("signed in, logged out of the game: nothing to verify yet",
-			List.of("~Connected as Maho z h", "Enter a code from the site…", "Join our Discord", "Open dream-chasers.cc", "Sign out"),
+			List.of("~Connected as Maho z h", "Join our Discord", "Open dream-chasers.cc", "Sign out"),
 			menuLabels(panel));
 		snapshot(panel, "signed-in");
 	}
@@ -541,7 +542,7 @@ public class DreamChasersPanelTest
 		panel.setConnected(true);
 		flush();
 		assertEquals("at the login screen", "~Log in to the game to sign in", menuLabels(panel).get(1));
-		assertEquals("Enter a code from the site…", menuLabels(panel).get(2));
+		assertFalse("no code entry before there's a name to verify", menuLabels(panel).contains("Enter a code from the site…"));
 
 		panel.setOwnClan("Join the clan in game first", null);
 		flush();
@@ -581,13 +582,24 @@ public class DreamChasersPanelTest
 		panel.verifyDone(null, false);
 		panel.setVerifiedAs("Tadeko");
 		flush();
-		assertEquals("verified: nothing more to do", List.of("~Verified as Tadeko", "Enter a code from the site…", "Join our Discord",
+		assertEquals("verified: nothing more to do, no code entry", List.of("~Verified as Tadeko", "Join our Discord",
 			"Open dream-chasers.cc", "Sign out"), menuLabels(panel));
 
+		panel.setOwnClan(OwnClan.blocker(OwnClan.Reading.UNKNOWN), null);
+		flush();
+		assertEquals("verified, clan record not loaded (or no clan): no blocker line", List.of("~Verified as Tadeko", "Join our Discord",
+			"Open dream-chasers.cc", "Sign out"), menuLabels(panel));
 		panel.setOwnClan("Your clan in game isn't DRM Chasers. Join DRM Chasers first", null);
+		flush();
+		assertEquals("verified, in another clan: nothing to do either", "Join our Discord", menuLabels(panel).get(1));
+
 		panel.setVerifiedAs(null);
 		flush();
-		assertEquals("blocked, signed in", "~Your clan in game isn't DRM Chasers. Join DRM Chasers first", menuLabels(panel).get(1));
+		assertEquals("blocked, signed in, wrapped to the panel", List.of("~Connected as Maho z h", "~Your clan in game isn't DRM Chasers.",
+			"~Join DRM Chasers first", "Join our Discord", "Open dream-chasers.cc", "Sign out"), menuLabels(panel));
+		panel.setOwnClan(OwnClan.blocker(OwnClan.Reading.UNKNOWN), null);
+		flush();
+		assertMenuFits(panel);
 	}
 
 	@Test
@@ -752,7 +764,7 @@ public class DreamChasersPanelTest
 		flush();
 		assertTrue(statusText(panel), statusText(panel).contains("Join DRM Chasers first."));
 		assertEquals(Brand.WARN, ((JLabel) named(panel, "status")).getForeground());
-		assertTrue("the menu says it too", menuLabels(panel).contains("~" + blocker));
+		assertTrue("the menu says it too, wrapped", String.join(" ", menuLabels(panel)).replace("~", "").contains(blocker));
 
 		panel.setOwnClan(null, "Tadeko");     // joined DRM Chasers in game: the reason no longer holds
 		flush();
@@ -997,10 +1009,18 @@ public class DreamChasersPanelTest
 		panel.setRosterStatus("Roster sent 12:34: 2 added, 1 rank changed");
 		flush();
 		assertFalse("never in the sidebar", allText(panel).contains("Roster"));
-		assertTrue(menuLabels(panel).contains("~Roster sync is on"));
+		assertTrue("one short line, never the site's message", menuLabels(panel).contains("~Roster sync is on"));
+		assertFalse(String.join(" ", menuLabels(panel)).contains("Roster sent"));
 		panel.setRosterStatus("Roster sync stopped: Only officers can sync the roster. Roster sync is off until you log in again.");
 		flush();
 		assertTrue(menuLabels(panel).contains("~Roster sync is off"));
+		panel.setRosterStatus("Verify pickup stopped: the site didn't take it");
+		flush();
+		assertTrue("pickup stopping reads off", menuLabels(panel).contains("~Roster sync is off"));
+		panel.setRosterStatus("Changed again: sending at 12:35");
+		flush();
+		assertTrue(menuLabels(panel).contains("~Roster sync is on"));
+		assertMenuFits(panel);
 		panel.setRosterStatus(null);
 		flush();
 		assertFalse(menuLabels(panel).stream().anyMatch(l -> l.contains("Roster")));
@@ -1120,6 +1140,16 @@ public class DreamChasersPanelTest
 		assertTrue("Remove me stays with the setting off", findNamed(panel, "splashRemove") != null);
 		assertTrue(findNamed(panel, "splashResend") == null);
 		assertTrue(findNamed(panel, "splashView") != null);
+		assertTrue("no refresh icon: the rejected line says how to send a new pose",
+			allText(panel).contains("Turn on <b>Clan splash</b> in this plugin's settings to send a new pose."));
+
+		panel.showModelStatus(new ApiResult<>(ApiResult.Status.OK, GSON.fromJson(
+			"{\"featured\":{\"rsn\":\"x\",\"status\":\"rejected\"}}",
+			cc.dreamchasers.clan.api.ModelStatusResponse.class), NOW, null));
+		flush();
+		text = allText(panel);
+		assertTrue(text.contains("Your last pose couldn't be used. Turn on <b>Clan splash</b>"));
+		assertFalse("never asks for a pose there's no button for", text.contains("Stand still in game and send a new pose."));
 	}
 
 	@Test
@@ -1233,6 +1263,25 @@ public class DreamChasersPanelTest
 			}
 		});
 		return out;
+	}
+
+	/** No menu line is much wider than the panel: the menu opens right-aligned and would spill over the game. */
+	private static void assertMenuFits(DreamChasersPanel panel) throws Exception
+	{
+		for (String l : menuLabels(panel))
+		{
+			assertTrue("too wide for the menu: " + l, l.replace("~", "").length() <= DreamChasersPanel.MENU_LINE_CHARS);
+		}
+	}
+
+	@Test
+	public void longMenuLinesWrapAtSpaces()
+	{
+		assertEquals(List.of("Join DRM Chasers in game first, or", "open your clan tab and wait a few", "seconds"),
+			DreamChasersPanel.wrapMenuLine(OwnClan.blocker(OwnClan.Reading.UNKNOWN)));
+		assertEquals(List.of("Turn on Connect in the plugin settings"), DreamChasersPanel.wrapMenuLine("Turn on Connect in the plugin settings"));
+		String word = "x".repeat(DreamChasersPanel.MENU_LINE_CHARS + 3);
+		assertEquals(List.of("a", word.substring(0, DreamChasersPanel.MENU_LINE_CHARS), "xxx b"), DreamChasersPanel.wrapMenuLine("a " + word + " b"));
 	}
 
 	private static void clickMenu(DreamChasersPanel panel, String label) throws Exception
