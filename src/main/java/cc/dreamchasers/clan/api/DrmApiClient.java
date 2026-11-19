@@ -76,6 +76,8 @@ public class DrmApiClient
 	static final int MAX_JSON_BYTES = 512 * 1024;
 
 	private final OkHttpClient http;
+	/** Per address tried by the sign-in start, so broken IPv6 costs at most this before IPv4. */
+	static final int JOIN_START_CONNECT_SECONDS = 3;
 	/** Only for {@code /api/join/start}: the same client, but trying IPv6 first (see {@link #preferIpv6}). */
 	private final OkHttpClient joinStartHttp;
 	private final Gson gson;
@@ -112,7 +114,10 @@ public class DrmApiClient
 	{
 		// never follow a 3xx: a redirect would take the client (and its IP, and a 307/308's POST body) off the API host the IP warning names
 		this.http = http.newBuilder().followRedirects(false).followSslRedirects(false).build();
-		this.joinStartHttp = this.http.newBuilder().dns(preferIpv6(Dns.SYSTEM)).build();
+		// a short connect timeout, so a line whose IPv6 is broken moves on to IPv4 within
+		// JOIN_START_CONNECT_SECONDS instead of the client's usual wait
+		this.joinStartHttp = this.http.newBuilder().dns(preferIpv6(Dns.SYSTEM))
+			.connectTimeout(JOIN_START_CONNECT_SECONDS, java.util.concurrent.TimeUnit.SECONDS).build();
 		this.gson = gson;
 		this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
 		this.userAgent = userAgent;
@@ -149,6 +154,12 @@ public class DrmApiClient
 			}
 			return sorted;
 		};
+	}
+
+	/** The sign-in start's client, for tests. */
+	OkHttpClient joinStartClient()
+	{
+		return joinStartHttp;
 	}
 
 	/** The client actually used, for tests. */

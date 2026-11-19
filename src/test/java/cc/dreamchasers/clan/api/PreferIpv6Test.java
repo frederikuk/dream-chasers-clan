@@ -30,4 +30,14 @@ public class PreferIpv6Test
 		assertEquals("no IPv6: unchanged", List.of(v4a, v4b),
 			DrmApiClient.preferIpv6(host -> List.of(v4a, v4b)).lookup("dream-chasers.cc"));
 	}
+
+	@Test
+	public void brokenIpv6CostsAtMostAShortWait()
+	{
+		DrmApiClient api = new DrmApiClient(new okhttp3.OkHttpClient(), new com.google.gson.Gson(), "https://dream-chasers.cc/api/v1",
+			"test", () -> null, java.time.Clock.systemUTC());
+		assertEquals(DrmApiClient.JOIN_START_CONNECT_SECONDS * 1000, api.joinStartClient().connectTimeoutMillis());
+		assertEquals("every other request keeps the client's own timeout",
+			new okhttp3.OkHttpClient().connectTimeoutMillis(), api.httpClient().connectTimeoutMillis());
+	}
 }
