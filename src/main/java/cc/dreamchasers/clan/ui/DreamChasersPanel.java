@@ -197,7 +197,7 @@ public class DreamChasersPanel extends PluginPanel
 	private final JPanel everything = section();
 	private final JPanel clogHint = section();
 	private final JPanel live = section();
-	/** Full width and pinned to the bottom of the panel: no side padding, its parts pad themselves. */
+	/** Full width, under the last section: no side padding, its parts pad themselves. */
 	private final JPanel splash = new JPanel();
 	private final JPanel events = section();
 	private final JPanel competition = section();
@@ -319,15 +319,6 @@ public class DreamChasersPanel extends PluginPanel
 		splash.setBorder(BorderFactory.createMatteBorder(2, 0, 0, 0, Brand.GOLD_DEEP));
 		splash.setAlignmentX(Component.LEFT_ALIGNMENT);
 		add(splash, BorderLayout.SOUTH);
-
-		// PluginPanel puts this panel at the top of its scroll view, at its preferred height.
-		// This view holds it in the centre instead: a plain (not Scrollable) view is stretched
-		// to the viewport while it is shorter, so the splash sits at the bottom; once the
-		// content is taller than the sidebar it scrolls as before.
-		JPanel view = new JPanel(new BorderLayout());
-		view.setBackground(Brand.VOID);
-		view.add(this, BorderLayout.CENTER);
-		getScrollPane().setViewportView(view);
 
 		// Keep "in 2h 15m" and LIVE current without any network traffic.
 		ticker = new Timer(30_000, e -> renderEvents());

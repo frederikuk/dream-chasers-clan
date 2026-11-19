@@ -437,7 +437,7 @@ public class DreamChasersPanelTest
 	}
 
 	@Test
-	public void theSplashIsLastFullWidthAndPinnedToTheBottom() throws Exception
+	public void theSplashIsLastAndFullWidthInRuneLitesOwnScrollPane() throws Exception
 	{
 		DreamChasersPanel panel = newPanel(new Calls());
 		panel.setConnected(true);
@@ -456,13 +456,19 @@ public class DreamChasersPanelTest
 		assertEquals("RuneLite's own scroll bar policy", javax.swing.ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
 			scroll.getVerticalScrollBarPolicy());
 
-		// a tall sidebar (no scroll bar, 242 wide): the panel fills it and the splash sits on its bottom edge
+		// PluginPanel's scroll pane is left as RuneLite made it: its view is still RuneLite's
+		// own wrapper, with this panel at the top of it
+		assertTrue("RuneLite's view, not ours", scroll.getViewport().getView() != panel
+			&& scroll.getViewport().getView() == panel.getParent());
+
+		// a tall sidebar (no scroll bar, 242 wide): the panel keeps its own height and the
+		// splash comes straight after the last section
 		layOut(outer, 2000);
 		assertFalse("no scroll bar", scroll.getVerticalScrollBar().isVisible());
 		assertEquals("the viewport's full width", scroll.getViewport().getWidth(), panel.getWidth());
 		int wideWidth = panel.getWidth();
-		assertTrue("stretched past its content", panel.getHeight() > panel.getPreferredSize().height + 100);
-		assertEquals("on the bottom edge", panel.getHeight(), splash.getY() + splash.getHeight());
+		assertEquals("its own height, not stretched", panel.getPreferredSize().height, panel.getHeight());
+		assertEquals("the splash ends the panel", panel.getHeight(), splash.getY() + splash.getHeight());
 		assertEquals("full width", panel.getWidth(), splash.getWidth());
 		assertEquals("the image is edge to edge", panel.getWidth(), img.getWidth());
 		assertEquals("its height is the one made for 225 wide", Math.round(253 * 225f / 450), img.getHeight());
