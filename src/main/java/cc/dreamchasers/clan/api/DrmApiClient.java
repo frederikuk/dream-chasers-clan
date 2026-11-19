@@ -15,10 +15,14 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.Inet6Address;
+import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -29,6 +33,7 @@ import javax.imageio.ImageIO;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.Call;
 import okhttp3.Callback;
+import okhttp3.Dns;
 import okhttp3.HttpUrl;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
@@ -71,6 +76,8 @@ public class DrmApiClient
 	static final int MAX_JSON_BYTES = 512 * 1024;
 
 	private final OkHttpClient http;
+	/** Only for {@code /api/join/start}: the same client, but trying IPv6 first (see {@link #preferIpv6}). */
+	private final OkHttpClient joinStartHttp;
 	private final Gson gson;
 	private final String baseUrl;
 	private final String userAgent;
@@ -105,11 +112,43 @@ public class DrmApiClient
 	{
 		// never follow a 3xx: a redirect would take the client (and its IP, and a 307/308's POST body) off the API host the IP warning names
 		this.http = http.newBuilder().followRedirects(false).followSslRedirects(false).build();
+		this.joinStartHttp = this.http.newBuilder().dns(preferIpv6(Dns.SYSTEM)).build();
 		this.gson = gson;
 		this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
 		this.userAgent = userAgent;
 		this.tokenSupplier = tokenSupplier;
 		this.clock = clock;
+	}
+
+	/**
+	 * The site asks for the panel's code only when the browser approving a sign-in
+	 * is on another network than the plugin that started it (its IPv4 address,
+	 * or its IPv6 /64). Java connects over IPv4 first, browsers over IPv6, so on
+	 * a home line with both every sign-in asked for the code. The start request
+	 * tries IPv6 first; with no IPv6 it is IPv4 as before.
+	 */
+	static Dns preferIpv6(Dns base)
+	{
+		return host ->
+		{
+			List<InetAddress> all = base.lookup(host);
+			List<InetAddress> sorted = new ArrayList<>(all.size());
+			for (InetAddress a : all)
+			{
+				if (a instanceof Inet6Address)
+				{
+					sorted.add(a);
+				}
+			}
+			for (InetAddress a : all)
+			{
+				if (!(a instanceof Inet6Address))
+				{
+					sorted.add(a);
+				}
+			}
+			return sorted;
+		};
 	}
 
 	/** The client actually used, for tests. */
@@ -510,7 +549,7 @@ public class DrmApiClient
 			callback.accept(new ApiResult<>(ApiResult.Status.ERROR, null, null, "The site address isn't right"));
 			return;
 		}
-		send(request, LinkStartResponse.class, result ->
+		send(joinStartHttp, request, LinkStartResponse.class, result ->
 		{
 			LinkStartResponse s = result.getValue();
 			if (s != null && s.getUrl() != null)
@@ -715,6 +754,11 @@ public class DrmApiClient
 	 */
 	private <T> void send(Request.Builder request, Class<T> type, Consumer<ApiResult<T>> callback)
 	{
+		send(http, request, type, callback);
+	}
+
+	private <T> void send(OkHttpClient client, Request.Builder request, Class<T> type, Consumer<ApiResult<T>> callback)
+	{
 		Request built = request.build();
 		String path = built.url().encodedPath();
 		if (backingOff(path, clock.instant()))
@@ -722,7 +766,7 @@ public class DrmApiClient
 			callback.accept(new ApiResult<>(ApiResult.Status.ERROR, null, null, BUSY));
 			return;
 		}
-		http.newCall(built).enqueue(new Callback()
+		client.newCall(built).enqueue(new Callback()
 		{
 			@Override
 			public void onFailure(Call call, IOException e)
