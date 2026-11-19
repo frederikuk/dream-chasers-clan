@@ -10,10 +10,10 @@ The Dream Chasers clan's own RuneLite plugin. It adds a sidebar panel with:
 Everything comes from the clan site, `https://dream-chasers.cc`. The Dream
 Chasers wordmark at the top opens the site. The round player button in the top
 right corner is always there and opens the player menu: who you're signed in as
-("Verified as …" once your name is verified, "Not signed in" before), **Sign in
-with Discord** (or **Verify NAME for Discord** for a logged-in name that isn't
-verified yet), **Enter a code from the site…**, **Join our Discord**, the site,
-and **Sign out**. When signing in isn't possible yet, the menu says why in a
+("Verified as …" once your name is verified, "Connected as …" before that, "Not
+signed in" before signing in), **Sign in with Discord** (or **Verify NAME for
+Discord** for a logged-in name that isn't verified yet) with **Enter a code from
+the site…** beside it, **Join our Discord**, the site, and **Sign out**. When signing in isn't possible yet, the menu says why in a
 greyed-out line.
 
 There is no sign-in box in the sidebar. Signing in starts in the plugin's

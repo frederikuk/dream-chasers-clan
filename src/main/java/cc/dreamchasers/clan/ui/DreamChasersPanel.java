@@ -92,7 +92,7 @@ public class DreamChasersPanel extends PluginPanel
 		+ "&bull; The plugin sends your character's 3D shape, gear included, to dream-chasers.cc. Nothing else, and no one else's.<br>"
 		+ "&bull; It becomes the dragonstone statue on the splash, with your RSN. The clan sees it in this panel and on the site, and it may be shown on the DRM Live stream.<br>"
 		+ "&bull; The same model is your profile picture and 3D view on your clan profile on the site.<br>"
-		+ "&bull; Press the <b>x</b> beside your name (Remove me from the clan splash) at any time: the site deletes your model and splash, and your profile stops using it.<br>"
+		+ "&bull; Press the <b>x</b> in the splash row (Remove me from the clan splash) at any time: the site deletes your model and splash, and your profile stops using it.<br>"
 		+ "Stand still in game, then press the button.";
 	/** The player button in the header's top right corner, like the site's account icon. */
 	static final int PLAYER_SIZE = 30;
@@ -215,8 +215,8 @@ public class DreamChasersPanel extends PluginPanel
 	private ApiResult<CompetitionResponse> competitionResult;
 	private ApiResult<HallOfFameResponse> hallOfFameResult;
 	private ApiResult<LinksResponse> linksResult;
-	/** Officer roster sync's one line, shown greyed out in the player menu; null leaves it out. */
-	private String rosterLine;
+	/** Officer roster sync, shown greyed out in the player menu as on or off; null leaves it out. */
+	private Boolean rosterOn;
 	// sign in / verify for Discord (verified join), from the player menu
 	private String verifyBlocker = cc.dreamchasers.clan.OwnClan.LOGGED_OUT_BLOCKER;
 	private String verifyRsn;
@@ -541,12 +541,12 @@ public class DreamChasersPanel extends PluginPanel
 			JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE) == JOptionPane.OK_OPTION;
 	}
 
-	/** Officer roster sync's status line (officers with the setting on only); null hides it. */
-	public void setRosterStatus(String line)
+	/** Officer roster sync's state (officers with the setting on only): on, off once the site stopped it, or null to leave it out. */
+	public void setRosterSync(Boolean on)
 	{
 		onEdt(() ->
 		{
-			rosterLine = line;
+			rosterOn = on;
 		});
 	}
 
@@ -893,13 +893,11 @@ public class DreamChasersPanel extends PluginPanel
 				menu.add(menuItem("Enter a code from the site…", this::enterCode));
 			}
 		}
-		String roster = rosterLine;
+		Boolean roster = rosterOn;
 		if (roster != null)
 		{
-			// officer roster sync and verify pickup, as one short line (Frederik, 19 Nov: "Just \"Roster Sync is On\" is
-			// enough"): off once the site has stopped either, else on
-			menu.add(greyed(roster.startsWith("Roster sync stopped") || roster.startsWith("Verify pickup stopped")
-				? "Roster sync is off" : "Roster sync is on"));
+			// one short line (Frederik, 19 Nov: "Just \"Roster Sync is On\" is enough"); off once the site stopped it
+			menu.add(greyed(roster ? "Roster sync is on" : "Roster sync is off"));
 		}
 		menu.addSeparator();
 		// the server invite, from /links; before links load, the join page (it has the invite too)

@@ -150,4 +150,16 @@ public class VerifiedFoldTest
 		assertNull("another account", DreamChasersClanPlugin.verifiedMatch("Fred r k", verified));
 		assertNull("no name yet", DreamChasersClanPlugin.verifiedMatch(null, verified));
 	}
+
+	@Test
+	public void aMeAnswerFromBeforeTheVerifyDoesNotUndoTheFold()
+	{
+		Scripted p = verifiedAs("Fred525");
+		p.addVerified("4rederik");
+		assertEquals("an answer sent before the verify keeps the new name",
+			List.of("Fred525", "4rederik"), p.withJustVerified(List.of("Fred525")));
+		assertEquals("once the site lists it, it isn't added twice",
+			List.of("Fred525", "4rederik"), p.withJustVerified(List.of("Fred525", "4rederik")));
+		assertEquals("and it's no longer held", List.of("Fred525"), p.withJustVerified(List.of("Fred525")));
+	}
 }

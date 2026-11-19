@@ -46,6 +46,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -194,6 +195,8 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	private volatile boolean liveOnStream;
 	/** Names the site has verified to this member (GET /plugin/me); empty until known. */
 	volatile List<String> verifiedNames = Collections.emptyList();
+	/** Names verified in this session that a {@code /plugin/me} answer hasn't listed yet. */
+	private final Set<String> justVerified = ConcurrentHashMap.newKeySet();
 	/**
 	 * Set when the logged-in name is needed for the Verify fold but the game
 	 * hasn't given it yet (it has none at the LOGGED_IN event itself): checked
@@ -1241,7 +1244,14 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		}
 		boolean show = officer && config.connect() && config.officerRosterSync() && signedInName() != null;
 		String line = rosterLine;
-		panel.setRosterStatus(show ? (line == null ? RosterSync.idleLine() : line) : null);
+		if (show && line != null)
+		{
+			log.debug("Roster sync: {}", line);     // the details; the menu says only on or off
+		}
+		RosterSync rs = roster;
+		WitnessPickup wp = pickup;
+		boolean stopped = (rs != null && rs.isStopped()) || (wp != null && wp.isStopped());
+		panel.setRosterSync(show ? !stopped : null);
 	}
 
 	// ---- collection log and big drops ----
@@ -1507,7 +1517,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 				MeResponse me = result.getValue();
 				if (result.getStatus() == ApiResult.Status.OK && me != null && me.getVerified() != null)
 				{
-					verifiedNames = me.getVerified();
+					verifiedNames = withJustVerified(me.getVerified());
 					updateVerified();
 				}
 			});
@@ -2118,7 +2128,6 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		return s != null && !s.trim().isEmpty();
 	}
 
-	/** The logged-in player's name (null at the login screen), read on the client thread. */
 	/** Runs {@code then} on the client thread with the logged-in name (null when there's none); overridden in tests. */
 	void withRsn(Consumer<String> then)
 	{
@@ -2150,6 +2159,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	private void forgetToken()
 	{
 		verifiedNames = Collections.emptyList();
+		justVerified.clear();
 		liveConsented = false;
 		liveOnStream = false;
 		configManager.unsetConfiguration(DreamChasersClanConfig.GROUP, DreamChasersClanConfig.TOKEN_KEY);
@@ -2162,7 +2172,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		{
 			panel.setSignedInAs(null);
 			panel.setVerifiedAs(null);
-			panel.setRosterStatus(null);
+			panel.setRosterSync(null);
 		}
 		rosterLine = null;
 		rosterAnswer = null;
@@ -2175,10 +2185,33 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	 */
 	void addVerified(String name)
 	{
+		justVerified.add(name);
 		List<String> v = new ArrayList<>(verifiedNames);
 		v.add(name);
 		verifiedNames = v;
 		updateVerified();
+	}
+
+	/**
+	 * A {@code /plugin/me} answer's names, plus any verified here since that the
+	 * answer doesn't list yet (a request already on its way when the verify
+	 * finished), so the fold isn't undone. A name drops out once the site lists it.
+	 */
+	List<String> withJustVerified(List<String> fromSite)
+	{
+		List<String> v = new ArrayList<>(fromSite);
+		for (String n : justVerified)
+		{
+			if (fromSite.stream().anyMatch(s -> rsnKey(s) != null && rsnKey(s).equals(rsnKey(n))))
+			{
+				justVerified.remove(n);
+			}
+			else
+			{
+				v.add(n);
+			}
+		}
+		return v;
 	}
 
 	/**

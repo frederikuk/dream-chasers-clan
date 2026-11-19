@@ -1006,22 +1006,15 @@ public class DreamChasersPanelTest
 		panel.setSignedInAs("Tadeko");
 		flush();
 		assertFalse(menuLabels(panel).stream().anyMatch(l -> l.contains("Roster")));
-		panel.setRosterStatus("Roster sent 12:34: 2 added, 1 rank changed");
+		panel.setRosterSync(true);
 		flush();
 		assertFalse("never in the sidebar", allText(panel).contains("Roster"));
 		assertTrue("one short line, never the site's message", menuLabels(panel).contains("~Roster sync is on"));
-		assertFalse(String.join(" ", menuLabels(panel)).contains("Roster sent"));
-		panel.setRosterStatus("Roster sync stopped: Only officers can sync the roster. Roster sync is off until you log in again.");
+		panel.setRosterSync(false);
 		flush();
 		assertTrue(menuLabels(panel).contains("~Roster sync is off"));
-		panel.setRosterStatus("Verify pickup stopped: the site didn't take it");
-		flush();
-		assertTrue("pickup stopping reads off", menuLabels(panel).contains("~Roster sync is off"));
-		panel.setRosterStatus("Changed again: sending at 12:35");
-		flush();
-		assertTrue(menuLabels(panel).contains("~Roster sync is on"));
 		assertMenuFits(panel);
-		panel.setRosterStatus(null);
+		panel.setRosterSync(null);
 		flush();
 		assertFalse(menuLabels(panel).stream().anyMatch(l -> l.contains("Roster")));
 	}
