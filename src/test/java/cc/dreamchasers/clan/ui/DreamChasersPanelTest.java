@@ -69,39 +69,9 @@ public class DreamChasersPanelTest
 		}
 
 		@Override
-		public void link(String code)
-		{
-			log.add("link " + code);
-		}
-
-		@Override
 		public void signOut()
 		{
 			log.add("signOut");
-		}
-
-		@Override
-		public void connect()
-		{
-			log.add("connect");
-		}
-
-		@Override
-		public void cancelConnect()
-		{
-			log.add("cancelConnect");
-		}
-
-		@Override
-		public void optIn()
-		{
-			log.add("optIn");
-		}
-
-		@Override
-		public void dismissConnect()
-		{
-			log.add("dismissConnect");
 		}
 
 		@Override
@@ -335,7 +305,6 @@ public class DreamChasersPanelTest
 		assertEquals("Sign in", ((javax.swing.JComponent) player).getToolTipText());
 		assertEquals(List.of("~Not signed in", "~Turn on Connect in the plugin settings", "Join our Discord", "Open dream-chasers.cc"),
 			menuLabels(panel));
-		assertFalse("the panel never turns Connect on by itself", calls.log.contains("optIn"));
 		snapshot(panel, "disconnected");
 	}
 
@@ -558,7 +527,6 @@ public class DreamChasersPanelTest
 		assertTrue(statusText(panel).contains("Asking dream-chasers.cc…"));
 		assertEquals("one start at a time", "~Sign in with Discord", menuLabels(panel).get(1));
 		assertFalse("no code entry while busy", menuLabels(panel).contains("Enter a code from the site…"));
-		assertFalse("the panel never turns Connect on itself", calls.log.contains("optIn"));
 	}
 
 	@Test

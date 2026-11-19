@@ -188,12 +188,7 @@ site's officer joins page.
   out or turn it off. The join page shows newcomers a green dot when saying
   the code will work.
 
-## The older sign-in routes
-
-Before 0.5.4 the panel also had a browser-approval **Connect** (behind
-"Already verified on another PC?") and a link-code field for codes from
-dream-chasers.cc/plugin. Sign in with Discord now signs returning members in
-too, so the panel no longer shows either.
+## Signing out
 
 The plugin only ever stores a token for dream-chasers.cc. **Sign out** in the
 player menu (top right of the panel) revokes it, and you can also revoke it on dream-chasers.cc/plugin.

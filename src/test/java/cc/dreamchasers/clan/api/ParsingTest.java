@@ -40,17 +40,6 @@ public class ParsingTest
 	}
 
 	@Test
-	public void codesAreNormalised()
-	{
-		assertEquals("DRM-7KQ4-P2XM", DrmApiClient.normalizeCode(" drm-7kq4-p2xm "));
-		assertEquals("DRM-7KQ4-P2XM", DrmApiClient.normalizeCode("drm 7kq4 p2xm"));
-		assertEquals("DRM-7KQ4-P2XM", DrmApiClient.normalizeCode("7KQ4P2XM"));
-		assertEquals("DRM-7KQ4-P2XM", DrmApiClient.normalizeCode("DRM—7KQ4—P2XM"));
-		assertEquals("ABC", DrmApiClient.normalizeCode(" abc "));
-		assertEquals("", DrmApiClient.normalizeCode(null));
-	}
-
-	@Test
 	public void timesTolerateJunk()
 	{
 		assertNull(ApiTimes.parse(null));

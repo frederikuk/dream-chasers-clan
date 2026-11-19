@@ -69,6 +69,15 @@ public class VerifyFlow extends BrowserApproval<JoinAttestResponse, VerifyFlow.J
 		}
 	}
 
+	static final Duration POLL_EVERY = Duration.ofSeconds(3);
+	static final Duration MAX_WAIT = Duration.ofMinutes(10);
+	/**
+	 * A request still pending this long gets {@link BrowserApproval.Waiter#stillWaiting}: Discord
+	 * refuses some accounts on its own page (an unverified or throwaway one) and
+	 * never sends the member back, so the site can't say anything (5 Nov 2026).
+	 */
+	static final Duration STILL_WAITING_AFTER = Duration.ofMinutes(2);
+
 	static final String EXPIRED = "That request has expired. Try again from the player menu at the top right.";
 	static final String USED = "That request was already used. If you approved it, try again from the player menu at the top right to sign this PC in.";
 	/**
@@ -87,7 +96,7 @@ public class VerifyFlow extends BrowserApproval<JoinAttestResponse, VerifyFlow.J
 		Supplier<OwnClan.Reading> ownClan, String pluginVersion)
 	{
 		this(api, executor, clock, browser, ownClan, pluginVersion,
-			ConnectFlow.POLL_EVERY, ConnectFlow.MAX_WAIT, ConnectFlow.STILL_WAITING_AFTER);
+			POLL_EVERY, MAX_WAIT, STILL_WAITING_AFTER);
 	}
 
 	VerifyFlow(DrmApiClient api, ScheduledExecutorService executor, Clock clock, Predicate<String> browser,

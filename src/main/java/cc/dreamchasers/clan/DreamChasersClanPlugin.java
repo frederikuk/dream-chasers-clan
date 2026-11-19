@@ -160,7 +160,6 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	private NavigationButton navButton;
 	private ScheduledFuture<?> tick;
 	private ScheduledFuture<?> liveTick;
-	private ConnectFlow connectFlow;
 	private JoinFlow joinFlow;
 	private VerifyFlow verifyFlow;
 	// clan splash: the site enforces the upload limit too
@@ -273,7 +272,6 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		raidStats = new RaidStats();
 		roster = new RosterSync();
 		pickup = new WitnessPickup();
-		connectFlow = new ConnectFlow(api, executor, Clock.systemUTC(), url -> safeLinks.open(url, safeLinks.site()));
 		panel.setCollapsed(config.collapsedSections());
 		panel.setConnected(config.connect());
 		panel.setLiveEnabled(config.joinLive());
@@ -325,11 +323,6 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		}
 		tick = null;
 		liveTick = null;
-		if (connectFlow != null)
-		{
-			connectFlow.cancel();
-			connectFlow = null;
-		}
 		if (joinFlow != null)
 		{
 			joinFlow.cancel();
@@ -1410,11 +1403,6 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 					}
 					panel.verifyDone(null, false);
 				}
-				if (!config.connect() && connectFlow != null && connectFlow.isWaiting())
-				{
-					connectFlow.cancel();
-					panel.verifyDone(null, false);
-				}
 				refresh(false);
 				break;
 			case DreamChasersClanConfig.LIVE_KEY:
@@ -1649,32 +1637,6 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		});
 	}
 
-	@Override
-	public void link(String code)
-	{
-		DrmApiClient api = this.api;
-		DreamChasersPanel panel = this.panel;
-		if (api == null || panel == null)
-		{
-			return;
-		}
-		if (!config.connect())
-		{
-			panel.verifyDone("Turn on Connect to dream-chasers.cc in the plugin settings first", true);
-			return;
-		}
-		api.link(code, "RuneLite", result ->
-		{
-			if (result.getStatus() != ApiResult.Status.OK)
-			{
-				panel.verifyDone(result.getMessage(), true);
-				return;
-			}
-			panel.verifyDone(null, false);
-			signedIn(result.getValue().getToken(), result.getValue().getName());
-		});
-	}
-
 	/** Stores a new token and loads what it unlocks. */
 	private void signedIn(String token, String name)
 	{
@@ -1694,99 +1656,9 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		refreshLive(true);
 	}
 
-	/** Shown under the code once a Connect has waited 2 minutes (ConnectFlow.STILL_WAITING_AFTER). */
-	public static final String STILL_WAITING = "Still waiting for Discord? Check your browser is signed in to discord.com "
-		+ "with your main Discord account (it needs a verified email or phone). Then press Cancel and Connect again.";
-
-	/**
-	 * Turns on the same setting as the config panel's toggle, which stays off
-	 * by default. Nothing is sent from here. Since 0.5.4 the panel never calls
-	 * it: ticking Connect in the settings, with its IP-address warning, is the
-	 * consent. Only connect() below still does.
-	 */
-	@Override
-	public void optIn()
-	{
-		if (!config.connect())
-		{
-			configManager.setConfiguration(DreamChasersClanConfig.GROUP, DreamChasersClanConfig.CONNECT_KEY, true);
-		}
-		configManager.unsetConfiguration(DreamChasersClanConfig.GROUP, DreamChasersClanConfig.DISMISSED_KEY);
-	}
-
-	/**
-	 * The browser-approve sign-in (ConnectFlow), once "Already verified on
-	 * another PC?". Not offered by the panel since 0.5.4 (Sign in with Discord
-	 * signs returning members in too); kept, its wait shown in the status line.
-	 */
-	@Override
-	public void connect()
-	{
-		optIn();
-		DreamChasersPanel panel = this.panel;
-		if (panel != null)
-		{
-			panel.verifyDone("Asking dream-chasers.cc…", false);
-		}
-		withRsn(rsn ->
-		{
-			ConnectFlow flow = connectFlow;
-			if (flow == null || panel == null)
-			{
-				return;
-			}
-			flow.start(rsn, new ConnectFlow.Listener()
-			{
-				@Override
-				public void waiting(String code)
-				{
-					panel.setVerifyWaiting(code == null ? "…" : code, null);
-				}
-
-				@Override
-				public void stillWaiting(String code)
-				{
-					panel.setVerifyWaiting(code == null ? "…" : code, STILL_WAITING);
-				}
-
-				@Override
-				public void connected(String token, String name)
-				{
-					panel.verifyDone(null, false);
-					signedIn(token, name);
-				}
-
-				@Override
-				public void failed(String message)
-				{
-					panel.verifyDone(message, true);
-				}
-			});
-		});
-	}
-
-	@Override
-	public void cancelConnect()
-	{
-		if (connectFlow != null)
-		{
-			connectFlow.cancel();
-		}
-		if (panel != null)
-		{
-			panel.verifyDone(null, false);
-		}
-	}
-
-	@Override
-	public void dismissConnect()
-	{
-		configManager.setConfiguration(DreamChasersClanConfig.GROUP, DreamChasersClanConfig.DISMISSED_KEY, true);     // the old consent card's "Not now"; no longer offered
-	}
-
 	// ---- Verify for Discord (verified join) ----
 
-	/** Shown after the code once Sign in with Discord has waited 2 minutes (ConnectFlow.STILL_WAITING_AFTER). */
+	/** Shown after the code once Sign in with Discord has waited 2 minutes (VerifyFlow.STILL_WAITING_AFTER). */
 	public static final String VERIFY_STILL_WAITING = "Still waiting? Check your browser is signed in to discord.com "
 		+ "with your main Discord account (it needs a verified email or phone). Then press Cancel in the menu at the top right "
 		+ "and try again from there.";

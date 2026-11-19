@@ -15,7 +15,6 @@ final class Brand
 	static final Color VOID = new Color(0x0a0514);       // --void
 	static final Color NIGHT = new Color(0x150b22);      // --panel
 	static final Color ROYAL = new Color(0x6130ce);      // --gem-2
-	static final Color LILAC = new Color(0xccb3f5);      // --lilac
 	static final Color GOLD = new Color(0xf5da84);       // --gold
 	static final Color GOLD_DEEP = new Color(0xc8902e);  // --gold-deep
 	static final Color TEXT = new Color(0xece6f5);       // --fg

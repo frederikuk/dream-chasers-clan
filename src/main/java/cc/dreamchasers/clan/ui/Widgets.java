@@ -62,14 +62,6 @@ final class Widgets
 		return l;
 	}
 
-	static JLabel small(String plain)
-	{
-		JLabel l = new JLabel(plain);
-		l.setForeground(Brand.MUTED);
-		l.setFont(FontManager.getRunescapeSmallFont());
-		return l;
-	}
-
 	static JPanel row()
 	{
 		// hgap also indents the first button; the section border allows for it

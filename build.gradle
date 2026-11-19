@@ -35,16 +35,6 @@ tasks.withType(JavaCompile).configureEach {
 	options.release.set(11)
 }
 
-// Optional end-to-end sign-in test against staging (StagingLinkFlowTest).
-test {
-	['drmclanItBase': 'drmclan.it.base', 'drmclanItCode': 'drmclan.it.code'].each { prop, sys ->
-		if (project.hasProperty(prop)) {
-			systemProperty sys, project.property(prop)
-		}
-	}
-	testLogging { showStandardStreams = project.hasProperty('drmclanItBase') }
-}
-
 tasks.register('run', JavaExec) {
 	classpath = sourceSets.test.runtimeClasspath
 	mainClass = pluginMainClass

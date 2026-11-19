@@ -9,7 +9,7 @@ package cc.dreamchasers.clan.api;
 
 import lombok.Data;
 
-/** {@code POST /plugin/link/start}: a browser-approval request. */
+/** {@code POST /api/join/start}: a browser-approval request (Sign in with Discord). */
 @Data
 public class LinkStartResponse
 {

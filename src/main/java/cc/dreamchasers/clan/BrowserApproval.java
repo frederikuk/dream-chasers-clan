@@ -20,8 +20,8 @@ import java.util.function.Consumer;
 import java.util.function.Predicate;
 
 /**
- * The loop behind every "approve in the browser" step (Connect, and Verify in
- * browser): ask the site for a request, open its page, then poll until the
+ * The loop behind the "approve in the browser" step (Sign in with Discord,
+ * {@link VerifyFlow}): ask the site for a request, open its page, then poll until the
  * member answers there. Polls run every few seconds, only while a request is
  * waiting, ride out network blips, the site's 429 and 5xx answers and the
  * client's back-off, nudge once after {@code stillWaitingAfter}, and stop for

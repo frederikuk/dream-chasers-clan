@@ -20,7 +20,6 @@ public interface DreamChasersClanConfig extends Config
 	String TOKEN_KEY = "siteToken";
 	String SIGNED_IN_AS_KEY = "signedInAs";
 	String LIVE_KEY = "joinLive";
-	String DISMISSED_KEY = "connectDismissed";
 	String SPLASH_KEY = "clanSplash";
 	String SPLASH_OPTED_IN_KEY = "splashOptedIn";
 	String PBS_KEY = "postPbs";
@@ -234,17 +233,6 @@ public interface DreamChasersClanConfig extends Config
 		hidden = true
 	)
 	default boolean splashOptedIn()
-	{
-		return false;
-	}
-
-	@ConfigItem(
-		keyName = DISMISSED_KEY,
-		name = "",
-		description = "",
-		hidden = true
-	)
-	default boolean connectDismissed()
 	{
 		return false;
 	}

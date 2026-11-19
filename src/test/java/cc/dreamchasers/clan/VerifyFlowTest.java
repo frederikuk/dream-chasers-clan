@@ -244,7 +244,7 @@ public class VerifyFlowTest
 	public void networkBlipsKeepWaitingButTheDeadlineIsHard() throws Exception
 	{
 		fake.reply(200, START, null).fail().reply(200, PENDING, null).reply(200, PENDING, null);
-		// as in ConnectFlowTest: time jumps past 10 minutes once the third request has been made
+		// time jumps past 10 minutes once the third request has been made
 		Instant t0 = clock.instant();
 		java.util.concurrent.atomic.AtomicLong ticks = new java.util.concurrent.atomic.AtomicLong();
 		java.time.Clock jumping = new java.time.Clock()

@@ -358,73 +358,6 @@ public class DrmApiClient
 	}
 
 	/**
-	 * Swaps a link code from dream-chasers.cc/plugin for a long-lived token.
-	 * The caller stores {@link LinkResponse#getToken()}.
-	 */
-	public void link(String code, String device, Consumer<ApiResult<LinkResponse>> callback)
-	{
-		String normalized = normalizeCode(code);
-		if (normalized.isEmpty())
-		{
-			callback.accept(new ApiResult<>(ApiResult.Status.ERROR, null, null, "Paste the code from the site first"));
-			return;
-		}
-		JsonObject payload = new JsonObject();
-		payload.addProperty("code", normalized);
-		payload.addProperty("device", device);
-		Request request = newRequest("/plugin/link")
-			.post(RequestBody.create(JSON, gson.toJson(payload)))
-			.build();
-		http.newCall(request).enqueue(new Callback()
-		{
-			@Override
-			public void onFailure(Call call, IOException e)
-			{
-				log.debug("DRM API link failed", e);
-				callback.accept(new ApiResult<>(ApiResult.Status.ERROR, null, null, "Couldn't reach dream-chasers.cc"));
-			}
-
-			@Override
-			public void onResponse(Call call, Response response)
-			{
-				try (ResponseBody body = response.body())
-				{
-					String capped = readText(body);
-					String text = capped == null ? "" : capped;
-					if (response.code() == 200)
-					{
-						LinkResponse value = null;
-						try
-						{
-							value = capped == null ? null : gson.fromJson(text, LinkResponse.class);
-						}
-						catch (JsonParseException e)
-						{
-							log.debug("DRM API link sent unreadable JSON", e);
-						}
-						if (value == null || value.getToken() == null || value.getToken().isEmpty())
-						{
-							callback.accept(new ApiResult<>(ApiResult.Status.ERROR, null, null, "The site sent something unexpected"));
-							return;
-						}
-						callback.accept(new ApiResult<>(ApiResult.Status.OK, value, clock.instant(), null));
-						return;
-					}
-					String fallback = response.code() == 404
-						? "Sign-in isn't switched on at the site yet"
-						: "That code didn't work. Codes last 10 minutes and work once";
-					callback.accept(new ApiResult<>(ApiResult.Status.ERROR, null, null,
-						response.code() == 404 ? fallback : errorText(text, fallback)));
-				}
-				catch (IOException e)
-				{
-					callback.accept(new ApiResult<>(ApiResult.Status.ERROR, null, null, "Couldn't reach dream-chasers.cc"));
-				}
-			}
-		});
-	}
-
-	/**
 	 * Revokes the current token at the site (best effort) and forgets every
 	 * members-only response. The caller clears its stored token.
 	 */
@@ -454,26 +387,6 @@ public class DrmApiClient
 				response.close();
 			}
 		});
-	}
-
-	/** Asks the site for a browser-approval link request. {@code rsn} may be null. */
-	public void linkStart(String device, String rsn, Consumer<ApiResult<LinkStartResponse>> callback)
-	{
-		JsonObject payload = new JsonObject();
-		payload.addProperty("device", device);
-		if (rsn != null)
-		{
-			payload.addProperty("rsn", rsn);
-		}
-		send(newRequest("/plugin/link/start").post(RequestBody.create(JSON, gson.toJson(payload))),
-			LinkStartResponse.class, callback);
-	}
-
-	/** One poll of a link request: pending, denied, or allowed with a token. */
-	public void linkPoll(LinkStartResponse start, Consumer<ApiResult<LinkPollResponse>> callback)
-	{
-		send(newRequest("/plugin/link/poll?req=" + start.getRequest())
-			.header("Authorization", "Poll " + start.getPollKey()).get(), LinkPollResponse.class, callback);
 	}
 
 	/**
@@ -937,26 +850,5 @@ public class DrmApiClient
 		}
 		String body = code.replaceAll("[\\s\\u00A0-]+", "").toUpperCase(Locale.ROOT);
 		return body.length() == 8 ? body.substring(0, 4) + "-" + body.substring(4) : body;
-	}
-
-	/**
-	 * Tidies a pasted code into the site's {@code DRM-XXXX-XXXX} form, so
-	 * "drm 7kq4 p2xm" and "7KQ4P2XM" both work. Anything that isn't 8
-	 * characters after the prefix is sent as typed (upper-cased, no spaces)
-	 * and the site decides.
-	 */
-	static String normalizeCode(String code)
-	{
-		if (code == null)
-		{
-			return "";
-		}
-		String compact = code.replaceAll("\\s+", "").toUpperCase(Locale.ROOT);
-		String body = compact.replaceAll("[^A-Z0-9]", "");
-		if (body.startsWith("DRM"))
-		{
-			body = body.substring(3);
-		}
-		return body.length() == 8 ? "DRM-" + body.substring(0, 4) + "-" + body.substring(4) : compact;
 	}
 }

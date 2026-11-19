@@ -424,17 +424,6 @@ public class DrmApiClientTest
 	}
 
 	@Test
-	public void linkWithOversizedBodyIsAnError() throws Exception
-	{
-		http.reply(200, bigJson(600 * 1024), "no-store");
-
-		ApiResult<LinkResponse> r = await(cb -> api.link("DRM-AAAA-BBBB", "RuneLite", cb));
-
-		assertEquals(ApiResult.Status.ERROR, r.getStatus());
-		assertEquals("The site sent something unexpected", r.getMessage());
-	}
-
-	@Test
 	public void postWithOversizedBodyIsAnError() throws Exception
 	{
 		token = "tok123";
@@ -609,67 +598,6 @@ public class DrmApiClientTest
 	{
 		EventInfo event;
 		boolean live;
-	}
-
-	// ---- link code ----
-
-	@Test
-	public void linkPostsNormalisedCodeAndReturnsToken() throws Exception
-	{
-		http.reply(200, "{\"apiVersion\":1,\"token\":\"drm_pt_xyz\",\"name\":\"Maho z h\",\"expiresAt\":\"2027-04-30T00:00:00Z\"}", "no-store");
-
-		ApiResult<LinkResponse> r = await(cb -> api.link("  drm-7kq4 p2xm\n", "RuneLite", cb));
-
-		assertEquals(ApiResult.Status.OK, r.getStatus());
-		assertEquals("drm_pt_xyz", r.getValue().getToken());
-		assertEquals("Maho z h", r.getValue().getName());
-		FakeHttp.Recorded rec = http.requests.get(0);
-		assertEquals("POST", rec.request.method());
-		assertEquals(BASE + "/plugin/link", rec.request.url().toString());
-		assertNull("linking never sends an old token", rec.request.header("Authorization"));
-		JsonObject body = new Gson().fromJson(rec.body, JsonObject.class);
-		assertEquals("DRM-7KQ4-P2XM", body.get("code").getAsString());
-		assertEquals("RuneLite", body.get("device").getAsString());
-	}
-
-	@Test
-	public void linkWithBadCodeShowsTheSitesReason() throws Exception
-	{
-		http.reply(400, "{\"apiVersion\":1,\"error\":\"invalid or expired code\"}", "no-store");
-
-		ApiResult<LinkResponse> r = await(cb -> api.link("DRM-AAAA-BBBB", "RuneLite", cb));
-
-		assertEquals(ApiResult.Status.ERROR, r.getStatus());
-		assertEquals("Invalid or expired code", r.getMessage());
-	}
-
-	@Test
-	public void linkBeforeTheSiteHasTheRouteSaysSo() throws Exception
-	{
-		http.reply(404, "{\"error\":\"no such endpoint\",\"endpoints\":[]}", "no-store");
-
-		ApiResult<LinkResponse> r = await(cb -> api.link("DRM-AAAA-BBBB", "RuneLite", cb));
-
-		assertEquals("Sign-in isn't switched on at the site yet", r.getMessage());
-	}
-
-	@Test
-	public void linkWithEmptyTokenIsAnError() throws Exception
-	{
-		http.reply(200, "{\"apiVersion\":1,\"token\":\"\"}", "no-store");
-
-		ApiResult<LinkResponse> r = await(cb -> api.link("DRM-AAAA-BBBB", "RuneLite", cb));
-
-		assertEquals(ApiResult.Status.ERROR, r.getStatus());
-	}
-
-	@Test
-	public void emptyCodeMakesNoRequest() throws Exception
-	{
-		ApiResult<LinkResponse> r = await(cb -> api.link("   ", "RuneLite", cb));
-
-		assertEquals(ApiResult.Status.ERROR, r.getStatus());
-		assertTrue(http.requests.isEmpty());
 	}
 
 	@Test

@@ -108,27 +108,7 @@ public class DreamChasersPanel extends PluginPanel
 		/** The panel became visible (or the plugin wants fresh data); {@code force} skips the cache. */
 		void refresh(boolean force);
 
-		/** The typed link code from dream-chasers.cc/plugin. No longer offered by the panel (0.5.4): sign-in is the player menu. */
-		void link(String code);
-
 		void signOut();
-
-		/**
-		 * The browser-approve sign-in (ConnectFlow). No longer offered by the
-		 * panel (0.5.4): Sign in with Discord (VerifyFlow) signs returning members in too.
-		 */
-		void connect();
-
-		/** Was the opt-in from the old join card. The panel no longer turns Connect on (0.5.4): the setting's own warning is the consent. */
-		default void optIn()
-		{
-		}
-
-		/** Cancel for {@link #connect()}; no longer offered by the panel. */
-		void cancelConnect();
-
-		/** "Not now" on the old consent card; no longer offered by the panel. */
-		void dismissConnect();
 
 		/** The player menu's "Sign in with Discord" / "Verify NAME for Discord": the one-click verify, which signs in too. */
 		default void verifyStart()

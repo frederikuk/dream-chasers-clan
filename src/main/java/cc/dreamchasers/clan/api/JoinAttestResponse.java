@@ -11,7 +11,7 @@ import lombok.Data;
 
 /**
  * {@code POST /api/join/attest}. 200 {@code verified} carries the plugin token
- * ({@code token}, {@code name}, {@code expiresAt} as from {@code /plugin/link});
+ * ({@code token}, {@code name}, {@code expiresAt});
  * 202 {@code awaiting_roster} or {@code held} carries a message for the member
  * and no token. {@code GET /api/join/poll} (Verify in browser) answers in the
  * same shape, plus {@code pending} and {@code denied}.
