@@ -472,7 +472,7 @@ public class DreamChasersPanelTest
 		panel.setTilesEnabled(true);
 		panel.setLiveEnabled(true);
 		flush();
-		assertEquals(List.of("roster", "everything", "clogHint",
+		assertEquals(List.of("everything", "clogHint",
 			"events", "competition", "halloffame", "tiles", "live", "splash"), sectionNames(panel));
 		assertEquals(List.of("events", "competition", "halloffame", "tiles", "live"), DreamChasersPanel.SECTION_ORDER);
 
@@ -987,32 +987,24 @@ public class DreamChasersPanelTest
 	}
 
 	@Test
-	public void rosterLineShowsOnlyWhenGiven() throws Exception
+	public void rosterSyncIsALineInThePlayerMenuNotTheSidebar() throws Exception
 	{
 		DreamChasersPanel panel = newPanel(new Calls());
 		panel.setConnected(true);
 		panel.setSignedInAs("Tadeko");
 		flush();
-		assertFalse(allText(panel).contains("Roster"));
+		assertFalse(menuLabels(panel).stream().anyMatch(l -> l.contains("Roster")));
 		panel.setRosterStatus("Roster sent 12:34: 2 added, 1 rank changed");
 		flush();
-		assertTrue(allText(panel).contains("Roster sent 12:34: 2 added, 1 rank changed."));
-		snapshot(panel, "roster");
-		panel.setRosterStatus("Roster sync stopped: <b>Not an officer</b>");
-		flush();
-		assertTrue("site text is escaped", allText(panel).contains("Roster sync stopped: &lt;b&gt;Not an officer&lt;/b&gt;."));
+		assertFalse("never in the sidebar", allText(panel).contains("Roster"));
+		assertTrue(menuLabels(panel).contains("~Roster sent 12:34: 2 added, 1 rank changed."));
 		panel.setRosterStatus("Roster sync stopped: Only officers can sync the roster. Roster sync is off until you log in again.");
 		flush();
-		String stopped = allText(panel);
-		assertTrue(stopped, stopped.contains("you log in again."));
-		assertFalse("no second full stop after the site's own", stopped.contains("again.."));
-		panel.setRosterStatus("Changed again: sending at 12:35");
-		flush();
-		assertTrue(allText(panel).contains("Changed again: sending at 12:35."));
-		snapshot(panel, "roster-waiting");
+		assertTrue("no second full stop after the site's own",
+			menuLabels(panel).contains("~Roster sync stopped: Only officers can sync the roster. Roster sync is off until you log in again."));
 		panel.setRosterStatus(null);
 		flush();
-		assertFalse(allText(panel).contains("Roster"));
+		assertFalse(menuLabels(panel).stream().anyMatch(l -> l.contains("Roster")));
 	}
 
 	private static final String LIVE_JSON = "{\"apiVersion\":1,\"consent\":{\"version\":\"2026-11-01\",\"title\":\"Before you go on stream\","

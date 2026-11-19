@@ -165,9 +165,9 @@ reads.
   inside the minute is sent by itself once the minute is up, and the panel
   says when ("Changed again: sending at 12:35"). If the site was busy or
   couldn't be reached, the same list goes once more a minute later.
-- The panel shows one line, like "Roster sent 12:34: 2 added, 1 rank changed".
+- The player menu (top right) shows one greyed-out line, like "Roster sent 12:34: 2 added, 1 rank changed".
   If the site says you're not an officer, the sync stops until you log in
-  again or tick the setting again, and the panel says why.
+  again or tick the setting again, and that line says why.
 
 ### Verify pickup
 

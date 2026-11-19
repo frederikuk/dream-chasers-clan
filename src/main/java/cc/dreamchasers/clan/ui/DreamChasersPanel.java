@@ -97,7 +97,7 @@ public class DreamChasersPanel extends PluginPanel
 	/** The player button in the header's top right corner, like the site's account icon. */
 	static final int PLAYER_SIZE = 30;
 	/**
-	 * The content sections, top down, under the hint lines (roster, Enable
+	 * The content sections, top down, under the hint lines (Enable
 	 * everything, the collection log hint). The clan splash is not in it: it sits under them all, at the
 	 * bottom of the panel, as wide as the panel.
 	 */
@@ -194,7 +194,6 @@ public class DreamChasersPanel extends PluginPanel
 
 	/** The one status line under the header: the sign-in wait or answer, a hint, or a refresh failure. */
 	private final JLabel status = new JLabel();
-	private final JPanel roster = section();
 	private final JPanel everything = section();
 	private final JPanel clogHint = section();
 	private final JPanel live = section();
@@ -216,7 +215,7 @@ public class DreamChasersPanel extends PluginPanel
 	private ApiResult<CompetitionResponse> competitionResult;
 	private ApiResult<HallOfFameResponse> hallOfFameResult;
 	private ApiResult<LinksResponse> linksResult;
-	/** Officer roster sync's one line; null hides it. */
+	/** Officer roster sync's one line, shown greyed out in the player menu; null leaves it out. */
 	private String rosterLine;
 	// sign in / verify for Discord (verified join), from the player menu
 	private String verifyBlocker = cc.dreamchasers.clan.OwnClan.LOGGED_OUT_BLOCKER;
@@ -290,7 +289,6 @@ public class DreamChasersPanel extends PluginPanel
 		status.setAlignmentX(Component.LEFT_ALIGNMENT);
 		content.add(status);
 		content.add(Box.createVerticalStrut(6));
-		roster.setName("section:roster");
 		everything.setName("section:everything");
 		clogHint.setName("section:clogHint");
 		events.setName("section:events");
@@ -299,7 +297,7 @@ public class DreamChasersPanel extends PluginPanel
 		tiles.setName("section:tiles");
 		live.setName("section:live");
 		// the hint lines first (each only when it has something to say), then SECTION_ORDER
-		for (JPanel p : new JPanel[]{roster, everything, clogHint, events, competition, hallOfFame, tiles, live})
+		for (JPanel p : new JPanel[]{everything, clogHint, events, competition, hallOfFame, tiles, live})
 		{
 			content.add(p);
 			content.add(Box.createVerticalStrut(8));
@@ -549,7 +547,6 @@ public class DreamChasersPanel extends PluginPanel
 		onEdt(() ->
 		{
 			rosterLine = line;
-			renderRoster();
 		});
 	}
 
@@ -829,7 +826,6 @@ public class DreamChasersPanel extends PluginPanel
 	{
 		renderHeader();
 		renderStatus();
-		renderRoster();
 		renderEverything();
 		clogHint.setVisible(clogHint.getComponentCount() > 0);
 		renderLive();
@@ -895,6 +891,13 @@ public class DreamChasersPanel extends PluginPanel
 		if (connected && !verifyBusy && verifyWaitCode == null)
 		{
 			menu.add(menuItem("Enter a code from the site…", this::enterCode));
+		}
+		String roster = rosterLine;
+		if (roster != null)
+		{
+			// officer roster sync's state: information only, so greyed out; the site's own messages already end in a full stop
+			boolean ended = roster.endsWith(".") || roster.endsWith("!") || roster.endsWith("?");
+			menu.add(greyed(roster + (ended ? "" : ".")));
 		}
 		menu.addSeparator();
 		// the server invite, from /links; before links load, the join page (it has the invite too)
@@ -1156,21 +1159,6 @@ public class DreamChasersPanel extends PluginPanel
 	private void openJoinPage()
 	{
 		go(linkOr(LinksResponse::getSite, SITE) + "/join", safeLinks.site());
-	}
-
-	/** Officer roster sync: one muted line under the status line, only when the plugin gives one. */
-	private void renderRoster()
-	{
-		roster.removeAll();
-		String line = rosterLine;
-		roster.setVisible(line != null);
-		if (line != null)
-		{
-			// the site's own messages already end in a full stop
-			boolean ended = line.endsWith(".") || line.endsWith("!") || line.endsWith("?");
-			roster.add(text(esc(line) + (ended ? "" : "."), Brand.MUTED));
-		}
-		done(roster);
 	}
 
 	/**
