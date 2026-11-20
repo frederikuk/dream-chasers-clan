@@ -86,6 +86,19 @@ public class HeldSignInTest
 	}
 
 	@Test
+	public void theVerifiedLineNamesTheGameNameNotTheDiscordOne()
+	{
+		// the site names a held sign-in's token from Discord (join.js pluginMint unv): /me's name is that
+		Scripted p = new Scripted();
+		p.beginSignIn(false);
+		assertFalse(p.onMe(me(ApiResult.Status.OK, "{\"name\":\"melk_discord\",\"verified\":null,\"unverified\":true,"
+			+ "\"status\":\"held\",\"rsn\":\"Melk\"}")));
+		p.shown.clear();
+		assertTrue(p.onMe(me(ApiResult.Status.OK, "{\"name\":\"melk_discord\",\"verified\":[\"Melk\"]}")));
+		assertEquals(List.of("waiting null", "now verified Melk"), p.shown);
+	}
+
+	@Test
 	public void aHeldAnswerWithNoNameWaitsOnYourName()
 	{
 		Scripted p = new Scripted();

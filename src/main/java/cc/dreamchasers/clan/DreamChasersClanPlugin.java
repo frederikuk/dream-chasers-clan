@@ -203,6 +203,12 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	 * until an answer says otherwise (older sites only had verified sign-ins).
 	 */
 	volatile boolean signInUnverified;
+	/**
+	 * The game name that sign-in waits on, for the "Verified as" line once it
+	 * clears: the token's own name is the member's Discord name on a held
+	 * sign-in, so it can't stand in. Null when none is known.
+	 */
+	volatile String waitedOn;
 	/** Counts sign-ins and sign-outs; a {@code /plugin/me} answer asked under an earlier count is dropped. */
 	volatile int signInGen;
 	/**
@@ -1456,8 +1462,13 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 			return !signInUnverified;     // a cached or failed answer changes nothing
 		}
 		boolean was = signInUnverified;
+		String before = waitedOn;
 		signInUnverified = me.notVerifiedYet();
 		String waitingOn = me.waitingOn();
+		if (waitingOn != null && !waitingOn.isEmpty())
+		{
+			waitedOn = waitingOn;
+		}
 		if (signInUnverified && waitingOn == null)
 		{
 			// nothing is with the officers (cleared, or the name went to someone else): say to ask again
@@ -1469,7 +1480,8 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		}
 		if (was && !signInUnverified)
 		{
-			showNowVerified(me.getName());
+			waitedOn = null;
+			showNowVerified(before != null && !before.isEmpty() ? before : me.getName());
 		}
 		if (me.getVerified() != null)
 		{
@@ -1626,10 +1638,17 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		});
 	}
 
-	/** Stores a new token and loads what it unlocks: everything, or all but Events while it isn't verified yet. */
-	private void signedIn(String token, String name, boolean verified)
+	/**
+	 * Stores a new token and loads what it unlocks: everything, or all but
+	 * Events while it isn't verified yet. {@code waitingOn} is null for a
+	 * verified sign-in, else the game name the officers have to check (not
+	 * the token's name: the site names an unverified sign-in from Discord).
+	 */
+	private void signedIn(String token, String name, String waitingOn)
 	{
+		boolean verified = waitingOn == null;
 		beginSignIn(verified);
+		waitedOn = verified || waitingOn.isEmpty() ? null : waitingOn;
 		configManager.setConfiguration(DreamChasersClanConfig.GROUP, DreamChasersClanConfig.TOKEN_KEY, token);
 		configManager.setConfiguration(DreamChasersClanConfig.GROUP, DreamChasersClanConfig.SIGNED_IN_AS_KEY,
 			name == null || name.isEmpty() ? "clan member" : name);
@@ -1640,7 +1659,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 			return;
 		}
 		panel.setSignedInAs(signedInName());
-		panel.setWaitingFor(verified ? null : name == null ? "" : name);
+		panel.setWaitingFor(waitingOn);
 		api.invalidate(Endpoint.ME);     // an earlier sign-in's answer says nothing about this one
 		updateRosterStatus();
 		backfillDue = true;
@@ -1699,15 +1718,15 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 			public void verified(String token, String name, String message)
 			{
 				panel.verifiedDone(message);     // stays through the fold to verified that follows
-				signedIn(token, name, true);
+				signedIn(token, name, null);
 				addVerified(name);
 			}
 
 			@Override
-			public void unverified(String token, String name, String message)
+			public void unverified(String token, String name, String rsn, String message)
 			{
 				panel.verifyDone(message, false);
-				signedIn(token, name, false);
+				signedIn(token, name, rsn == null ? "" : rsn);
 			}
 
 			@Override
@@ -1758,15 +1777,15 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 			public void verified(String token, String name, String message)
 			{
 				panel.verifiedDone(message);     // stays through the fold to verified that follows
-				signedIn(token, name, true);
+				signedIn(token, name, null);
 				addVerified(name);
 			}
 
 			@Override
-			public void unverified(String token, String name, String message)
+			public void unverified(String token, String name, String rsn, String message)
 			{
 				panel.verifyDone(message, false);
-				signedIn(token, name, false);
+				signedIn(token, name, rsn == null ? "" : rsn);
 			}
 
 			@Override
@@ -2041,6 +2060,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	{
 		signInGen++;
 		signInUnverified = !verified;
+		waitedOn = null;
 	}
 
 	private void forgetToken()
@@ -2049,6 +2069,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		verifiedNames = Collections.emptyList();
 		justVerified.clear();
 		signInUnverified = false;
+		waitedOn = null;
 		liveConsented = false;
 		liveOnStream = false;
 		configManager.unsetConfiguration(DreamChasersClanConfig.GROUP, DreamChasersClanConfig.TOKEN_KEY);

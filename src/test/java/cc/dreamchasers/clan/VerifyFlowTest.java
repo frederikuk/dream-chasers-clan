@@ -80,9 +80,9 @@ public class VerifyFlowTest
 		}
 
 		@Override
-		public void unverified(String token, String name, String message)
+		public void unverified(String token, String name, String rsn, String message)
 		{
-			done.complete("unverified " + token + " " + name + " | " + message);
+			done.complete("unverified " + token + " " + name + " for " + rsn + " | " + message);
 		}
 
 		@Override
@@ -195,7 +195,7 @@ public class VerifyFlowTest
 	}
 
 	private static final String HELD_TOKEN = "{\"apiVersion\":1,\"status\":\"held\",\"reason\":\"rsn_taken\",\"rsn\":\"Tadeko\","
-		+ "\"message\":\"An officer will check this.\",\"token\":\"drm_pt_held\",\"name\":\"Tadeko\",\"expiresAt\":\"2027-11-07T20:00:00Z\"}";
+		+ "\"message\":\"An officer will check this.\",\"token\":\"drm_pt_held\",\"name\":\"tadeko_discord\",\"expiresAt\":\"2027-11-07T20:00:00Z\"}";
 
 	@Test
 	public void heldWithATokenSignsInUnverified() throws Exception
@@ -204,7 +204,7 @@ public class VerifyFlowTest
 		Outcome o = new Outcome();
 		VerifyFlow f = flow(Duration.ofMinutes(10));
 		f.start(o);
-		assertEquals("unverified drm_pt_held Tadeko | Signed in. Waiting for an officer to check Tadeko.", o.done.get(5, TimeUnit.SECONDS));
+		assertEquals("unverified drm_pt_held tadeko_discord for Tadeko | Signed in. Waiting for an officer to check Tadeko.", o.done.get(5, TimeUnit.SECONDS));
 		assertFalse(f.isWaiting());
 		TimeUnit.MILLISECONDS.sleep(50);
 		assertEquals("no poll after the answer, and no DELETE: the token is kept", 3, size());

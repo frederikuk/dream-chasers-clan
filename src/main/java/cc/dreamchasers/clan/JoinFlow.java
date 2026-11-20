@@ -31,9 +31,11 @@ public class JoinFlow
 		/**
 		 * Held or awaiting the roster, with a token (sites since 20 Nov 2026):
 		 * store it as the sign-in, but not as verified. Everything posts; Events
-		 * waits until {@code /plugin/me} says the name is verified.
+		 * waits until {@code /plugin/me} says the name is verified. {@code name}
+		 * is the token's (the site names it from Discord), {@code rsn} the game
+		 * name the officers have to check.
 		 */
-		void unverified(String token, String name, String message);
+		void unverified(String token, String name, String rsn, String message);
 
 		/** Over without a token; {@code isError} false for awaiting-roster and held answers from older sites. */
 		void finished(String message, boolean isError);
@@ -165,7 +167,7 @@ public class JoinFlow
 		if (heldWithToken(r))
 		{
 			String name = r.getRsn() == null ? rsn : r.getRsn();
-			outcome.unverified(r.getToken(), r.getName(), "Signed in. " + waitingLine(name) + ".");
+			outcome.unverified(r.getToken(), r.getName(), name, "Signed in. " + waitingLine(name) + ".");
 			return;
 		}
 		if (JoinAttestResponse.VERIFIED.equals(r.getStatus()) && r.getToken() != null && !r.getToken().isEmpty())

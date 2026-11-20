@@ -56,9 +56,9 @@ public class JoinFlowTest
 		}
 
 		@Override
-		public void unverified(String token, String name, String message)
+		public void unverified(String token, String name, String rsn, String message)
 		{
-			done.complete("unverified " + token + " " + name + " | " + message);
+			done.complete("unverified " + token + " " + name + " for " + rsn + " | " + message);
 		}
 
 		@Override
@@ -164,14 +164,15 @@ public class JoinFlowTest
 	{
 		// sign-in is never held (20 Nov 2026): the site hands over a token on held and awaiting answers too
 		fake.reply(200, PEEK_OK, null).reply(202, "{\"apiVersion\":1,\"status\":\"held\",\"reason\":\"x\",\"rsn\":\"Tadeko\","
-			+ "\"message\":\"An officer will check this.\",\"token\":\"drm_pt_held\",\"name\":\"Tadeko\",\"expiresAt\":\"2027-11-03T20:00:00.000Z\"}", null);
+			+ "\"message\":\"An officer will check this.\",\"token\":\"drm_pt_held\",\"name\":\"tadeko_discord\",\"expiresAt\":\"2027-11-03T20:00:00.000Z\"}", null);
 		Outcome o = attestFor();
-		assertEquals("unverified drm_pt_held Tadeko | Signed in. Waiting for an officer to check Tadeko.", o.done.get(5, TimeUnit.SECONDS));
+		// the site names an unverified sign-in from Discord: the waiting line keeps the game name
+		assertEquals("unverified drm_pt_held tadeko_discord for Tadeko | Signed in. Waiting for an officer to check Tadeko.", o.done.get(5, TimeUnit.SECONDS));
 
 		fake.reply(200, PEEK_OK, null).reply(202, "{\"apiVersion\":1,\"status\":\"awaiting_roster\",\"message\":\"Not on the roster yet.\","
-			+ "\"token\":\"drm_pt_wait\",\"name\":\"Tadeko\",\"expiresAt\":\"2027-11-03T20:00:00.000Z\"}", null);
+			+ "\"token\":\"drm_pt_wait\",\"name\":\"tadeko_discord\",\"expiresAt\":\"2027-11-03T20:00:00.000Z\"}", null);
 		Outcome o2 = attestFor();
-		assertEquals("no rsn in the answer: the logged-in one", "unverified drm_pt_wait Tadeko | Signed in. Waiting for an officer to check Tadeko.",
+		assertEquals("no rsn in the answer: the logged-in one", "unverified drm_pt_wait tadeko_discord for Tadeko | Signed in. Waiting for an officer to check Tadeko.",
 			o2.done.get(5, TimeUnit.SECONDS));
 	}
 
