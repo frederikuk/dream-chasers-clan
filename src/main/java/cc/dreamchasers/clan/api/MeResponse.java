@@ -18,7 +18,8 @@ import lombok.Data;
  * sites only ever had verified sign-ins and send neither. A waiting sign-in
  * names the request's game name in {@code rsn}; with none (an officer
  * cleared it, or the name went to someone else) nothing is waiting and
- * {@code message} says to ask again. {@code name} is the token's name, not
+ * {@code message} says to ask again; only {@code status} says a request is
+ * waiting, as a cleared one can still name its rsn. {@code name} is the token's name, not
  * the request's, so it never stands in for {@code rsn}.
  */
 @Data
@@ -46,15 +47,12 @@ public class MeResponse
 	 */
 	public String waitingOn()
 	{
-		if (!notVerifiedYet())
+		// only the status says a request is open: a cleared one can still carry its rsn
+		// (the site sends "unverified" with the token's name until the strip has run)
+		if (!JoinAttestResponse.HELD.equals(status) && !JoinAttestResponse.AWAITING_ROSTER.equals(status))
 		{
 			return null;
 		}
-		if (rsn != null && !rsn.trim().isEmpty())
-		{
-			return rsn.trim();
-		}
-		boolean waiting = JoinAttestResponse.HELD.equals(status) || JoinAttestResponse.AWAITING_ROSTER.equals(status);
-		return waiting ? "" : null;
+		return rsn == null ? "" : rsn.trim();
 	}
 }

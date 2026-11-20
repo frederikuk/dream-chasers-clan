@@ -294,6 +294,13 @@ public class DrmApiClient
 			ApiResult.Status status = code == 401 ? ApiResult.Status.UNAUTHORIZED : ApiResult.Status.FORBIDDEN;
 			String fallback = code == 401 ? "Sign in again" : "The site doesn't see you as a clan member";
 			String message = errorText(text == null ? "" : text, fallback);
+			if (code == 403 && saysUnverified(text))
+			{
+				// the sign-in isn't verified yet: no back-off and no stored refusal, so
+				// Events load at once when it is (the plugin stops asking meanwhile)
+				noteSuccess(endpoint.getPath());
+				return new ApiResult<>(status, null, null, message, 0, true);
+			}
 			if (code == 403)
 			{
 				noteFailure(endpoint.getPath(), response);
@@ -822,6 +829,20 @@ public class DrmApiClient
 	{
 		String token = tokenSupplier.get();
 		return token == null || token.trim().isEmpty() ? null : token.trim();
+	}
+
+	/** A refusal body that says the sign-in isn't verified yet ({@code unverified: true}). */
+	private boolean saysUnverified(String body)
+	{
+		try
+		{
+			ErrorResponse error = body == null ? null : gson.fromJson(body, ErrorResponse.class);
+			return error != null && Boolean.TRUE.equals(error.getUnverified());
+		}
+		catch (JsonParseException e)
+		{
+			return false;
+		}
 	}
 
 	private String errorText(String body, String fallback)

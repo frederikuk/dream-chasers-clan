@@ -560,6 +560,24 @@ public class DrmApiClientTest
 
 		assertEquals("FORBIDDEN keeps the token; only UNAUTHORIZED forgets it", ApiResult.Status.FORBIDDEN, r.getStatus());
 		assertNull(r.getValue());
+		assertTrue("marked, so the panel says why", r.isUnverified());
+
+		// no back-off: once /me says verified, the forced fetch goes to the site at once
+		http.reply(200, "{\"apiVersion\":1,\"events\":[]}", "private, max-age=60");
+		ApiResult<EventsResponse> next = fetch(Endpoint.EVENTS, true);
+		assertEquals(ApiResult.Status.OK, next.getStatus());
+		assertEquals(2, http.requests.size());
+	}
+
+	@Test
+	public void aPlain403IsNotMarkedUnverified() throws Exception
+	{
+		token = "drm_pt_abc";
+		http.reply(403, "{\"apiVersion\":1,\"error\":\"not a clan member\",\"unverified\":false}", "private, max-age=0");
+		assertFalse(fetch(Endpoint.EVENTS, false).isUnverified());
+		http.reply(403, "<html>challenge</html>", null);
+		clock.advanceSeconds(61);
+		assertFalse("not JSON", fetch(Endpoint.EVENTS, false).isUnverified());
 	}
 
 	@Test

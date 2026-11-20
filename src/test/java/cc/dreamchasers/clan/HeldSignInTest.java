@@ -117,7 +117,14 @@ public class HeldSignInTest
 		assertFalse("Events still wait", p.onMe(me(ApiResult.Status.OK, "{\"name\":\"Tadeko\",\"verified\":null,\"unverified\":true,"
 			+ "\"status\":\"unverified\",\"message\":\"" + cleared + "\"}")));
 		assertTrue(p.signInUnverified);
-		assertEquals("never 'waiting Tadeko'", List.of("not verified " + cleared), p.shown);
+		assertEquals("never 'waiting Tadeko', and the plugin's own words: Connect is a setting here",
+			List.of("not verified " + DreamChasersClanPlugin.NOT_VERIFIED), p.shown);
+
+		p.shown.clear();
+		// cleared, but the strip hasn't nulled the token's name yet (or failed): the site still sends rsn
+		assertFalse(p.onMe(me(ApiResult.Status.OK, "{\"name\":\"Tadeko\",\"unverified\":true,\"status\":\"unverified\","
+			+ "\"rsn\":\"Tadeko\",\"message\":\"" + cleared + "\"}")));
+		assertEquals("a name alone isn't a request", List.of("not verified " + DreamChasersClanPlugin.NOT_VERIFIED), p.shown);
 
 		p.shown.clear();
 		assertFalse(p.onMe(me(ApiResult.Status.OK, "{\"unverified\":true}")));
@@ -156,6 +163,45 @@ public class HeldSignInTest
 	}
 
 	@Test
+	public void theVerifiedLineNeverFallsBackToTheDiscordName()
+	{
+		// a restart forgets what was waited on; a cleared request later verified another way
+		Scripted p = new Scripted();
+		assertFalse(p.onMe(me(ApiResult.Status.OK, "{\"name\":\"melk_discord\",\"unverified\":true,\"status\":\"unverified\"}")));
+		p.shown.clear();
+		assertTrue(p.onMe(me(ApiResult.Status.OK, "{\"name\":\"melk_discord\",\"verified\":[\"Melk\"]}")));
+		assertEquals("the one verified name", List.of("waiting null", "now verified Melk"), p.shown);
+
+		Scripted q = new Scripted();
+		q.onMe(me(ApiResult.Status.OK, "{\"name\":\"melk_discord\",\"unverified\":true,\"status\":\"unverified\"}"));
+		q.shown.clear();
+		q.onMe(me(ApiResult.Status.OK, "{\"name\":\"melk_discord\",\"verified\":[\"Melk\",\"Alt\"]}"));
+		assertEquals("several: the plain line", List.of("waiting null", "now verified null"), q.shown);
+		assertEquals(null, DreamChasersClanPlugin.nowVerifiedName(null));
+		assertEquals(null, DreamChasersClanPlugin.nowVerifiedName(List.of()));
+	}
+
+	@Test
+	public void anEventsRefusalForAnUnverifiedSignInWaitsForMe()
+	{
+		// /me failed at startup with a held token, so Events went and the site refused it as unverified
+		Scripted p = new Scripted();
+		assertTrue("nothing known yet: Events may load", p.onMe(new ApiResult<>(ApiResult.Status.ERROR, null, null, "busy")));
+		int gen = p.signInGen;
+		p.eventsAnswered(gen, new ApiResult<>(ApiResult.Status.FORBIDDEN, null, null, "Not a clan member", 0, false));
+		assertFalse("a plain 403 says nothing about verification", p.signInUnverified);
+		p.eventsAnswered(gen - 1, new ApiResult<>(ApiResult.Status.FORBIDDEN, null, null, "Events show once you're verified", 0, true));
+		assertFalse("an earlier sign-in's answer counts for nothing", p.signInUnverified);
+		p.eventsAnswered(gen, new ApiResult<>(ApiResult.Status.FORBIDDEN, null, null, "Events show once you're verified", 0, true));
+		assertTrue(p.signInUnverified);
+		assertFalse("Events stop asking", p.onMe(new ApiResult<>(ApiResult.Status.ERROR, null, null, "busy")));
+
+		List<Boolean> events = new ArrayList<>();
+		p.onMeAnswer(p.signInGen, me(ApiResult.Status.OK, "{\"name\":\"Melk\",\"verified\":[\"Melk\"]}"), events::add);
+		assertEquals("verified: loaded at once, forced", List.of(true), events);
+	}
+
+	@Test
 	public void anOlderSitesAnswerIsAVerifiedSignIn()
 	{
 		// 0.5.4-era sites only ever handed out verified tokens, and their /me has no status
@@ -177,6 +223,9 @@ public class HeldSignInTest
 		assertEquals("Melk", GSON.fromJson("{\"name\":\"X\",\"status\":\"held\",\"rsn\":\" Melk \"}", MeResponse.class).waitingOn());
 		assertEquals("", GSON.fromJson("{\"name\":\"X\",\"status\":\"awaiting_roster\"}", MeResponse.class).waitingOn());
 		assertEquals(null, GSON.fromJson("{\"name\":\"X\",\"unverified\":true,\"status\":\"unverified\"}", MeResponse.class).waitingOn());
+		assertEquals("cleared with the name still on", null,
+			GSON.fromJson("{\"unverified\":true,\"status\":\"unverified\",\"rsn\":\"X\"}", MeResponse.class).waitingOn());
+		assertEquals("no status at all", null, GSON.fromJson("{\"unverified\":true,\"rsn\":\"X\"}", MeResponse.class).waitingOn());
 		assertEquals(null, GSON.fromJson("{\"name\":\"X\",\"verified\":[\"X\"]}", MeResponse.class).waitingOn());
 	}
 }

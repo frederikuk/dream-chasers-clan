@@ -39,6 +39,11 @@ public class ApiResult<T>
 	String message;
 	/** A POST's HTTP status when the site answered; 0 for a GET, or when nothing came back. */
 	int code;
+	/**
+	 * A FORBIDDEN that says the sign-in isn't verified yet ({@code unverified: true}
+	 * in the body): nothing is wrong with the account, Events just wait.
+	 */
+	boolean unverified;
 
 	public ApiResult(Status status, T value, Instant fetchedAt, String message)
 	{
@@ -47,6 +52,12 @@ public class ApiResult<T>
 
 	public ApiResult(Status status, T value, Instant fetchedAt, String message, int code)
 	{
+		this(status, value, fetchedAt, message, code, false);
+	}
+
+	public ApiResult(Status status, T value, Instant fetchedAt, String message, int code, boolean unverified)
+	{
+		this.unverified = unverified;
 		this.status = status;
 		this.value = value;
 		this.fetchedAt = fetchedAt;

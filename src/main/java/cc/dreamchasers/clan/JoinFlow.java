@@ -159,22 +159,23 @@ public class JoinFlow
 	 * What an attest-shaped answer means: a token with the "Verified" line, a
 	 * held or awaiting-roster token with the waiting line, or (older sites) the
 	 * site's awaiting-roster or held message. {@code rsn} stands in when the
-	 * answer names none. The line names the Discord account the site linked,
-	 * when it says; {@code after} follows the verified line.
+	 * answer names none. The line names the Discord account the site linked
+	 * (or signed in, when held), when it says; {@code after} follows the
+	 * verified and the held line, as both store a token.
 	 */
 	static void tell(JoinAttestResponse r, String rsn, Outcome outcome, String after)
 	{
+		String discord = r.getDiscordName() == null || r.getDiscordName().trim().isEmpty() ? "your Discord"
+			: "the Discord account " + r.getDiscordName().trim();
 		if (heldWithToken(r))
 		{
 			String name = r.getRsn() == null ? rsn : r.getRsn();
-			outcome.unverified(r.getToken(), r.getName(), name, "Signed in. " + waitingLine(name) + ".");
+			outcome.unverified(r.getToken(), r.getName(), name, "Signed in with " + discord + ". " + waitingLine(name) + "." + after);
 			return;
 		}
 		if (JoinAttestResponse.VERIFIED.equals(r.getStatus()) && r.getToken() != null && !r.getToken().isEmpty())
 		{
 			String name = r.getRsn() == null ? rsn : r.getRsn();
-			String discord = r.getDiscordName() == null || r.getDiscordName().trim().isEmpty() ? "your Discord"
-				: "the Discord account " + r.getDiscordName().trim();
 			String moved = r.getRenamedFrom() == null || r.getRenamedFrom().isEmpty() ? ""
 				: " Your link moved from " + r.getRenamedFrom() + " to " + name + ".";
 			outcome.verified(r.getToken(), r.getName(), "Verified: " + name + " is linked to " + discord + "."

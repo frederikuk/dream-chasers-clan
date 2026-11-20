@@ -198,13 +198,26 @@ public class VerifyFlowTest
 		+ "\"message\":\"An officer will check this.\",\"token\":\"drm_pt_held\",\"name\":\"tadeko_discord\",\"expiresAt\":\"2027-11-07T20:00:00Z\"}";
 
 	@Test
+	public void aHeldSignInNamesTheDiscordAccountAndHowToUndoIt() throws Exception
+	{
+		// a held answer stores a working token too, so a wrong browser account needs the same Sign out hint
+		fake.reply(200, START, null).reply(200, PENDING, null).reply(202, HELD_TOKEN.replace("\"name\"", "\"discordName\":\"tadeko_discord\",\"name\""), null);
+		Outcome o = new Outcome();
+		flow(Duration.ofMinutes(10)).start(o);
+		String done = o.done.get(5, TimeUnit.SECONDS);
+		assertTrue(done, done.contains("Signed in with the Discord account tadeko_discord. Waiting for an officer to check Tadeko."));
+		assertTrue(done, done.endsWith(VerifyFlow.NOT_YOU));
+	}
+
+	@Test
 	public void heldWithATokenSignsInUnverified() throws Exception
 	{
 		fake.reply(200, START, null).reply(200, PENDING, null).reply(202, HELD_TOKEN, null);
 		Outcome o = new Outcome();
 		VerifyFlow f = flow(Duration.ofMinutes(10));
 		f.start(o);
-		assertEquals("unverified drm_pt_held tadeko_discord for Tadeko | Signed in. Waiting for an officer to check Tadeko.", o.done.get(5, TimeUnit.SECONDS));
+		assertEquals("unverified drm_pt_held tadeko_discord for Tadeko | Signed in with your Discord. Waiting for an officer to check Tadeko."
+			+ VerifyFlow.NOT_YOU, o.done.get(5, TimeUnit.SECONDS));
 		assertFalse(f.isWaiting());
 		TimeUnit.MILLISECONDS.sleep(50);
 		assertEquals("no poll after the answer, and no DELETE: the token is kept", 3, size());

@@ -14,4 +14,6 @@ public class ErrorResponse
 {
 	private String error;
 	private String note;
+	/** A 403 saying the sign-in isn't verified yet (20 Nov 2026), not that the account is refused. */
+	private Boolean unverified;
 }

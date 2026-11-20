@@ -505,8 +505,9 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 			return;     // the site already took this standing PB this session
 		}
 		int session = pbSession;
+		int tokenGen = signInGen;
 		api.postAuthed("/plugin/pbs", Uploads.pb(record, rsn, Clock.systemUTC().instant(), accountDigest()), SubmitResponse.class,
-			result -> pbAnswered(record, session, result));
+			result -> pbAnswered(record, session, tokenGen, result));
 	}
 
 	/** A new PB always goes; a standing one only until the site has taken it (or a better one) this session. */
@@ -521,13 +522,14 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	 * boss's next time line, with no relog. Nothing is scheduled: the next kill
 	 * sets the pace, and the client's back-off (and the site's Retry-After on a
 	 * 429) holds it back. {@code session} keeps an answer that lands after a
-	 * logout from marking the next account's PB.
+	 * logout from marking the next account's PB, and {@code tokenGen} a 401
+	 * for an earlier sign-in's token from forgetting the new one.
 	 */
-	void pbAnswered(PbRecord record, int session, ApiResult<SubmitResponse> result)
+	void pbAnswered(PbRecord record, int session, int tokenGen, ApiResult<SubmitResponse> result)
 	{
 		if (result.getStatus() == ApiResult.Status.UNAUTHORIZED)
 		{
-			forgetToken();
+			forgetToken(tokenGen);
 		}
 		if (result.getStatus() != ApiResult.Status.OK)
 		{
@@ -851,11 +853,12 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 			return;
 		}
 		JsonObject body = Uploads.batch(PbBackfill.records(stored), rsn, accountDigest());
+		int tokenGen = signInGen;
 		api.postAuthed("/plugin/pbs/batch", body, BatchResponse.class, result ->
 		{
 			if (result.getStatus() == ApiResult.Status.UNAUTHORIZED)
 			{
-				forgetToken();
+				forgetToken(tokenGen);
 			}
 			if (result.getStatus() != ApiResult.Status.OK)
 			{
@@ -998,11 +1001,12 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 			}
 		}
 		rs.sending(now, key.toString());
+		int tokenGen = signInGen;
 		api.postAuthed("/plugin/raid", RaidStats.body(raid, hp, maxHp, prayer, maxPrayer, list), RaidResponse.class, result ->
 		{
 			if (result.getStatus() == ApiResult.Status.UNAUTHORIZED)
 			{
-				forgetToken();
+				forgetToken(tokenGen);
 			}
 			boolean ok = result.getStatus() == ApiResult.Status.OK && result.getValue() != null;
 			if (ok)
@@ -1121,12 +1125,13 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 			updateRosterStatus();
 			return;
 		}
+		int tokenGen = signInGen;
 		api.postAuthed(RosterSync.PATH, RosterSync.body(settings.getName(), Text.toJagexName(own), members), RosterResponse.class, result ->
 		{
 			RosterSync.Outcome out = sync.answered(result, hash, LocalTime.now(ZoneId.systemDefault()));
 			if (out.isForgetToken())
 			{
-				forgetToken();
+				forgetToken(tokenGen);
 			}
 			if (result.getStatus() != ApiResult.Status.OK)
 			{
@@ -1257,11 +1262,12 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		{
 			return;
 		}
+		int tokenGen = signInGen;
 		api.postAuthed("/plugin/loots", body, SubmitResponse.class, result ->
 		{
 			if (result.getStatus() == ApiResult.Status.UNAUTHORIZED)
 			{
-				forgetToken();
+				forgetToken(tokenGen);
 			}
 			if (result.getStatus() != ApiResult.Status.OK)
 			{
@@ -1415,15 +1421,31 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 
 	private void fetchEvents(DrmApiClient api, DreamChasersPanel panel, boolean force)
 	{
+		int tokenGen = signInGen;
 		api.fetch(Endpoint.EVENTS, force, result ->
 		{
 			if (result.getStatus() == ApiResult.Status.UNAUTHORIZED)
 			{
 				// The site no longer knows this token (revoked or expired). A 403 keeps it.
-				forgetToken();
+				forgetToken(tokenGen);
 			}
+			eventsAnswered(tokenGen, result);
 			panel.showEvents(result);
 		});
+	}
+
+	/**
+	 * A 403 marked unverified: the site doesn't see this sign-in as verified
+	 * though nothing here knew (a {@code /plugin/me} that failed at startup,
+	 * say). Events stop asking until {@code /plugin/me} says it is, and that
+	 * answer loads them at once. Package-private for tests.
+	 */
+	void eventsAnswered(int tokenGen, ApiResult<?> result)
+	{
+		if (tokenGen == signInGen && result.getStatus() == ApiResult.Status.FORBIDDEN && result.isUnverified())
+		{
+			signInUnverified = true;
+		}
 	}
 
 	/**
@@ -1471,8 +1493,9 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		}
 		if (signInUnverified && waitingOn == null)
 		{
-			// nothing is with the officers (cleared, or the name went to someone else): say to ask again
-			showNotVerified(JoinFlow.message(me.getMessage(), NOT_VERIFIED));
+			// nothing is with the officers (cleared, or the name went to someone else): say to ask
+			// again, in the plugin's own words: the site's say "Press Connect", which is a setting here
+			showNotVerified(NOT_VERIFIED);
 		}
 		else
 		{
@@ -1481,7 +1504,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		if (was && !signInUnverified)
 		{
 			waitedOn = null;
-			showNowVerified(before != null && !before.isEmpty() ? before : me.getName());
+			showNowVerified(before != null && !before.isEmpty() ? before : nowVerifiedName(me.getVerified()));
 		}
 		if (me.getVerified() != null)
 		{
@@ -1489,6 +1512,21 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 			updateVerified();
 		}
 		return !signInUnverified;
+	}
+
+	/**
+	 * The game name for the "Verified as" line when none was waited on: the
+	 * one name verified to this member, else null (the plain line). Never
+	 * {@code /me}'s name, which is the member's Discord name on a sign-in
+	 * that started held. Static for tests.
+	 */
+	static String nowVerifiedName(List<String> verified)
+	{
+		if (verified == null || verified.size() != 1 || verified.get(0) == null || verified.get(0).trim().isEmpty())
+		{
+			return null;
+		}
+		return verified.get(0).trim();
 	}
 
 	/** The name a sign-in that isn't verified yet waits on ("" when unnamed, null when it is verified); overridden in tests. */
@@ -1595,11 +1633,12 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		});
 		if (signedInName() != null && config.splashOptedIn())
 		{
+			int tokenGen = signInGen;
 			api.fetch(Endpoint.MODEL, false, result ->
 			{
 				if (result.getStatus() == ApiResult.Status.UNAUTHORIZED)
 				{
-					forgetToken();
+					forgetToken(tokenGen);
 				}
 				if (result.getStatus() == ApiResult.Status.OK && result.getValue() != null && !result.getValue().isOptedIn())
 				{
@@ -1619,11 +1658,12 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		{
 			return;
 		}
+		int tokenGen = signInGen;
 		api.fetch(Endpoint.LIVE, force, result ->
 		{
 			if (result.getStatus() == ApiResult.Status.UNAUTHORIZED)
 			{
-				forgetToken();
+				forgetToken(tokenGen);
 			}
 			else if (result.getValue() != null)
 			{
@@ -1850,11 +1890,12 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 			{
 				body.addProperty("rsn", rsn);
 			}
+			int tokenGen = signInGen;
 			api.postAuthed("/plugin/live/join", body, LiveJoinResponse.class, result ->
 			{
 				if (result.getStatus() == ApiResult.Status.UNAUTHORIZED)
 				{
-					forgetToken();
+					forgetToken(tokenGen);
 				}
 				if (result.getStatus() != ApiResult.Status.OK || result.getValue() == null
 					|| result.getValue().getPushUrl() == null)
@@ -1891,11 +1932,12 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		{
 			return;
 		}
+		int tokenGen = signInGen;
 		api.postAuthed(path, body, LiveActionResponse.class, result ->
 		{
 			if (result.getStatus() == ApiResult.Status.UNAUTHORIZED)
 			{
-				forgetToken();
+				forgetToken(tokenGen);
 			}
 			boolean ok = result.getStatus() == ApiResult.Status.OK;
 			if (ok && dropsSlot)
@@ -1973,11 +2015,12 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 			panel.splashDone("Your character's model is bigger than the site takes. Try without a pet or a large cape.", true);
 			return;
 		}
+		int tokenGen = signInGen;
 		api.uploadModel(obj, result ->
 		{
 			if (result.getStatus() == ApiResult.Status.UNAUTHORIZED)
 			{
-				forgetToken();
+				forgetToken(tokenGen);
 			}
 			if (result.getStatus() != ApiResult.Status.OK)
 			{
@@ -2006,11 +2049,12 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		{
 			return;
 		}
+		int tokenGen = signInGen;
 		api.deleteModel(result ->
 		{
 			if (result.getStatus() == ApiResult.Status.UNAUTHORIZED)
 			{
-				forgetToken();
+				forgetToken(tokenGen);
 			}
 			if (result.getStatus() != ApiResult.Status.OK)
 			{
@@ -2063,7 +2107,22 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		waitedOn = null;
 	}
 
-	private void forgetToken()
+	/**
+	 * A 401 for a request sent under sign-in {@code gen}: forgets the token
+	 * only when it is still that sign-in's. Asking again for the same name
+	 * revokes the previous held token at the site, so an answer for it that
+	 * lands after the new token is stored must not sign the member out.
+	 */
+	void forgetToken(int gen)
+	{
+		if (gen == signInGen)
+		{
+			forgetToken();
+		}
+	}
+
+	/** Signs this PC out: the token and all that hangs on it go. Package-private for tests. */
+	void forgetToken()
 	{
 		signInGen++;
 		verifiedNames = Collections.emptyList();

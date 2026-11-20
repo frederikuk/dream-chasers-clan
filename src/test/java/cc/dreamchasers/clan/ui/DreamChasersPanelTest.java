@@ -430,6 +430,49 @@ public class DreamChasersPanelTest
 	}
 
 	@Test
+	public void aClearAfterAHeldSignInReplacesItsWaitingLine() throws Exception
+	{
+		// the real order: the held sign-in's own line is the status, then an officer Clears
+		DreamChasersPanel panel = newPanel(new Calls());
+		panel.setConnected(true);
+		panel.setSignedInAs("tadeko_discord");
+		panel.setOwnClan(null, "Tadeko");
+		panel.verifyDone("Signed in with your Discord. Waiting for an officer to check Tadeko.", false);
+		panel.setWaitingFor("Tadeko");
+		flush();
+		assertTrue(statusText(panel), statusText(panel).contains("Signed in with your Discord. Waiting for an officer to check Tadeko."));
+
+		panel.setNotVerified("Ask again from the menu.");
+		flush();
+		assertFalse(statusText(panel), statusText(panel).contains("Waiting"));
+		assertTrue(statusText(panel), statusText(panel).contains("Ask again from the menu."));
+		assertTrue(menuLabels(panel).contains("Verify Tadeko for Discord"));
+
+		panel.verifyDone("You pressed Deny in the browser, so nothing was linked.", true);
+		panel.setNotVerified("Ask again from the menu.");
+		panel.setNotVerified("Another line.");
+		flush();
+		assertTrue("an error stays", statusText(panel).contains("You pressed Deny"));
+	}
+
+	@Test
+	public void anUnverifiedEventsRefusalSaysEventsWait() throws Exception
+	{
+		DreamChasersPanel panel = newPanel(new Calls());
+		panel.setConnected(true);
+		panel.setSignedInAs("Someone");
+		panel.showEvents(new ApiResult<>(ApiResult.Status.FORBIDDEN, null, null, "Events show once you're verified.", 0, true));
+		flush();
+		String text = allText(panel);
+		assertTrue(text, text.contains("Events show once you're verified."));
+		assertFalse(text, text.contains("#rsn"));
+
+		panel.showEvents(new ApiResult<>(ApiResult.Status.FORBIDDEN, null, null, "Not a clan member."));
+		flush();
+		assertFalse("one full stop", allText(panel).contains(".."));
+	}
+
+	@Test
 	public void thePlayerMenuOffersTheDiscordInviteOnceKnownAndChecksIt() throws Exception
 	{
 		Calls calls = new Calls();

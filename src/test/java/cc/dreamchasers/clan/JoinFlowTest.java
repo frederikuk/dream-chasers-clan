@@ -167,12 +167,12 @@ public class JoinFlowTest
 			+ "\"message\":\"An officer will check this.\",\"token\":\"drm_pt_held\",\"name\":\"tadeko_discord\",\"expiresAt\":\"2027-11-03T20:00:00.000Z\"}", null);
 		Outcome o = attestFor();
 		// the site names an unverified sign-in from Discord: the waiting line keeps the game name
-		assertEquals("unverified drm_pt_held tadeko_discord for Tadeko | Signed in. Waiting for an officer to check Tadeko.", o.done.get(5, TimeUnit.SECONDS));
+		assertEquals("unverified drm_pt_held tadeko_discord for Tadeko | Signed in with your Discord. Waiting for an officer to check Tadeko.", o.done.get(5, TimeUnit.SECONDS));
 
 		fake.reply(200, PEEK_OK, null).reply(202, "{\"apiVersion\":1,\"status\":\"awaiting_roster\",\"message\":\"Not on the roster yet.\","
 			+ "\"token\":\"drm_pt_wait\",\"name\":\"tadeko_discord\",\"expiresAt\":\"2027-11-03T20:00:00.000Z\"}", null);
 		Outcome o2 = attestFor();
-		assertEquals("no rsn in the answer: the logged-in one", "unverified drm_pt_wait tadeko_discord for Tadeko | Signed in. Waiting for an officer to check Tadeko.",
+		assertEquals("no rsn in the answer: the logged-in one", "unverified drm_pt_wait tadeko_discord for Tadeko | Signed in with your Discord. Waiting for an officer to check Tadeko.",
 			o2.done.get(5, TimeUnit.SECONDS));
 	}
 

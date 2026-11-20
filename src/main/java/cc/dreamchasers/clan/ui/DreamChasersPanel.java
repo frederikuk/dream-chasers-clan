@@ -653,11 +653,17 @@ public class DreamChasersPanel extends PluginPanel
 	 * The sign-in isn't verified and no request is waiting on an officer:
 	 * {@code message} (the site's, saying to ask again) goes in the status
 	 * line, Events keeps waiting, and the menu offers Verify for the name.
+	 * A sign-in's own line ("Signed in ... Waiting for an officer") goes the
+	 * first time, as it no longer holds; an error or a link in progress stays.
 	 */
 	public void setNotVerified(String message)
 	{
 		onEdt(() ->
 		{
+			if (!java.util.Objects.equals(notVerified, message) && verifyMessage != null && !verifyMessageIsError && !verifyBusy)
+			{
+				clearVerifyMessage();
+			}
 			waitingFor = null;
 			notVerified = message;
 			renderHeader();
@@ -1174,9 +1180,14 @@ public class DreamChasersPanel extends PluginPanel
 		}
 
 		ApiResult<EventsResponse> r = eventsResult;
-		if (r != null && r.getStatus() == ApiResult.Status.FORBIDDEN)
+		if (r != null && r.getStatus() == ApiResult.Status.FORBIDDEN && r.isUnverified())
 		{
-			events.add(text(esc(r.getMessage()) + ". Set your server nickname to your RSN in #rsn, or claim your account on the site, then reopen this panel.", Brand.WARN));
+			// the site doesn't see the sign-in as verified yet; /plugin/me's next answer says why
+			events.add(text("Events show once you're verified.", Brand.MUTED));
+		}
+		else if (r != null && r.getStatus() == ApiResult.Status.FORBIDDEN)
+		{
+			events.add(text(esc(String.valueOf(r.getMessage()).replaceAll("[.\\s]+$", "")) + ". Set your server nickname to your RSN in #rsn, or claim your account on the site, then reopen this panel.", Brand.WARN));
 		}
 		else if (r == null || r.getValue() == null)
 		{
