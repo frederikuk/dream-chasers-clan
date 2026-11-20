@@ -172,7 +172,7 @@ public class JoinFlow
 		}
 		if (JoinAttestResponse.HELD.equals(r.getStatus()))
 		{
-			outcome.finished(message(r.getMessage(), "An officer has to check this one. Open dream-chasers.cc/join for your witness code."), false);
+			outcome.finished(message(r.getMessage(), "An officer has to check this one. Watch dream-chasers.cc/join."), false);
 			return;
 		}
 		outcome.finished("The site sent something unexpected", true);

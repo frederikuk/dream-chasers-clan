@@ -19,7 +19,6 @@ import cc.dreamchasers.clan.api.MeResponse;
 import cc.dreamchasers.clan.api.ModelStatusResponse;
 import cc.dreamchasers.clan.api.RaidResponse;
 import cc.dreamchasers.clan.api.RosterResponse;
-import cc.dreamchasers.clan.api.WitnessResponse;
 import cc.dreamchasers.clan.api.BatchResponse;
 import cc.dreamchasers.clan.api.SubmitResponse;
 import cc.dreamchasers.clan.loot.ClogTracker;
@@ -240,11 +239,6 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	private int rosterDueTick = -1;
 	// a close inside the minute: the list goes by itself once the minute is up; set on the client thread
 	private volatile boolean rosterPending;
-	// verify pickup (with the roster sync setting): witness codes said in clan chat or a PM, and the 5-minute "here"
-	private volatile WitnessPickup pickup;
-	// the clan and own name the last "here" went with, so the "gone" after logout can name them
-	private volatile String hereClan;
-	private volatile String hereSender;
 
 	@Override
 	protected void startUp()
@@ -271,7 +265,6 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 
 		raidStats = new RaidStats();
 		roster = new RosterSync();
-		pickup = new WitnessPickup();
 		panel.setCollapsed(config.collapsedSections());
 		panel.setConnected(config.connect());
 		panel.setLiveEnabled(config.joinLive());
@@ -313,7 +306,6 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	{
 		signInDue = false;
 		signInUnknownTicks = 0;
-		pickupGone();
 		for (ScheduledFuture<?> f : new ScheduledFuture<?>[]{tick, liveTick})
 		{
 			if (f != null)
@@ -346,7 +338,6 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		api = null;
 		raidStats = null;
 		roster = null;
-		pickup = null;
 		officer = false;
 		rosterLine = null;
 		rosterAnswer = null;
@@ -404,12 +395,6 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 				{
 					r.resume();     // another account may be an officer
 				}
-				pickupGone();
-				WitnessPickup p = pickup;
-				if (p != null)
-				{
-					p.resume();
-				}
 				rosterLine = null;
 				rosterAnswer = null;
 				rosterPending = false;
@@ -440,12 +425,6 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	public void onChatMessage(ChatMessage event)
 	{
 		ChatMessageType type = event.getType();
-		if (type == ChatMessageType.CLAN_CHAT || type == ChatMessageType.PRIVATECHAT)
-		{
-			pickupChat(event.getName(), event.getMessage(),
-				type == ChatMessageType.PRIVATECHAT ? WitnessPickup.Via.PM : WitnessPickup.Via.CLAN);
-			return;
-		}
 		if (type != ChatMessageType.GAMEMESSAGE && type != ChatMessageType.SPAM
 			&& type != ChatMessageType.FRIENDSCHATNOTIFICATION)
 		{
@@ -551,7 +530,6 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		trialTick();
 		backfillTick();
 		rosterTick();
-		pickupTick();
 	}
 
 	/**
@@ -1123,110 +1101,6 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		});
 	}
 
-	// ---- verify pickup ----
-
-	/** Whether the pickup may run: Connect and the setting on, signed in, logged in, an officer in Dream Chasers. */
-	private boolean pickupOn()
-	{
-		return pickup != null && api != null && officer && config.connect() && config.officerRosterSync()
-			&& signedInName() != null && client.getGameState() == GameState.LOGGED_IN;
-	}
-
-	/** The 5-minute "here", so the /join page can say an officer's plugin is online. Client thread. */
-	private void pickupTick()
-	{
-		WitnessPickup p = pickup;
-		if (!pickupOn())
-		{
-			return;
-		}
-		ClanSettings settings = client.getClanSettings(ClanID.CLAN);
-		Player me = client.getLocalPlayer();
-		if (settings == null || me == null || me.getName() == null || !p.hereDue(Clock.systemUTC().instant()))
-		{
-			return;
-		}
-		hereClan = settings.getName();
-		hereSender = Text.toJagexName(me.getName());
-		api.postAuthed(WitnessPickup.PATH, WitnessPickup.hereBody(hereClan, hereSender, true), WitnessResponse.class,
-			this::pickupAnswered);
-	}
-
-	/** Logged out, the setting off or the plugin stopping: the site hears the officer has gone. */
-	private void pickupGone()
-	{
-		WitnessPickup p = pickup;
-		DrmApiClient api = this.api;
-		String clan = hereClan, sender = hereSender;
-		if (p == null || api == null || clan == null || sender == null || !p.goneDue())
-		{
-			return;
-		}
-		api.postAuthed(WitnessPickup.PATH, WitnessPickup.hereBody(clan, sender, false), WitnessResponse.class, result -> { });
-	}
-
-	/**
-	 * A clan chat line or a received PM: only when it holds a witness code do
-	 * the code and the sender's name go to the site. Client thread.
-	 */
-	private void pickupChat(String name, String message, WitnessPickup.Via via)
-	{
-		WitnessPickup p = pickup;
-		if (!pickupOn())
-		{
-			return;
-		}
-		String code = WitnessPickup.findCode(message);
-		String rsn = code == null ? null : WitnessPickup.senderName(name);
-		ClanSettings settings = client.getClanSettings(ClanID.CLAN);
-		Player me = client.getLocalPlayer();
-		if (rsn == null || settings == null || me == null || me.getName() == null)
-		{
-			return;
-		}
-		String own = Text.toJagexName(me.getName());
-		if (rsn.equalsIgnoreCase(own) || (via == WitnessPickup.Via.PM && settings.findMember(rsn) == null))
-		{
-			return;     // the officer's own line, or a PM from someone outside the clan
-		}
-		if (!p.take(Clock.systemUTC().instant(), rsn, code))
-		{
-			return;     // already sent, or over the limit
-		}
-		api.postAuthed(WitnessPickup.PATH, WitnessPickup.witnessBody(settings.getName(), own, rsn, code, via),
-			WitnessResponse.class, result ->
-			{
-				if (result.getStatus() == ApiResult.Status.ERROR)
-				{
-					p.release(rsn, code);     // no answer: the same line may go again
-				}
-				pickupAnswered(result);
-			});
-	}
-
-	private void pickupAnswered(ApiResult<WitnessResponse> result)
-	{
-		WitnessPickup p = pickup;
-		if (p == null)
-		{
-			return;
-		}
-		WitnessPickup.Outcome out = p.answered(result, LocalTime.now(ZoneId.systemDefault()));
-		if (out.isForgetToken())
-		{
-			forgetToken();
-		}
-		if (out.getLine() != null)
-		{
-			rosterAnswer = out.getLine();
-			if (!rosterPending)
-			{
-				rosterLine = out.getLine();
-			}
-			updateRosterStatus();
-		}
-	}
-
 	/** The panel's roster line: only for an officer, signed in, with Connect and the setting on. */
 	private void updateRosterStatus()
 	{
@@ -1242,8 +1116,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 			log.debug("Roster sync: {}", line);     // the details; the menu says only on or off
 		}
 		RosterSync rs = roster;
-		WitnessPickup wp = pickup;
-		boolean stopped = (rs != null && rs.isStopped()) || (wp != null && wp.isStopped());
+		boolean stopped = rs != null && rs.isStopped();
 		panel.setRosterSync(show ? !stopped : null);
 	}
 
@@ -1387,10 +1260,6 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 				panel.setConnected(config.connect());
 				clanCheckDue = true;
 				updateRosterStatus();
-				if (!config.connect())
-				{
-					pickupGone();
-				}
 				if (!config.connect() && (joinFlow != null || verifyFlow != null))
 				{
 					if (joinFlow != null)
@@ -1418,14 +1287,6 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 					roster.resume();     // a fresh tick tries again after a refusal
 					rosterLine = null;
 					rosterAnswer = null;
-				}
-				if (config.officerRosterSync() && pickup != null)
-				{
-					pickup.resume();
-				}
-				else if (!config.officerRosterSync())
-				{
-					pickupGone();
 				}
 				clanCheckDue = true;     // re-reads the own rank on the next tick
 				updateRosterStatus();
@@ -2019,7 +1880,6 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	@Override
 	public void signOut()
 	{
-		pickupGone();     // while the token still works
 		// with Connect off nothing is sent; the token is only forgotten here
 		if (api != null && config.connect())
 		{

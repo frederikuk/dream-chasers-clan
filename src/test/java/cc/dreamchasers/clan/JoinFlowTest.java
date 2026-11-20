@@ -148,9 +148,9 @@ public class JoinFlowTest
 	public void heldIsShownWithoutAToken() throws Exception
 	{
 		fake.reply(200, PEEK_OK, null).reply(202, "{\"apiVersion\":1,\"status\":\"held\",\"reason\":\"x\","
-			+ "\"message\":\"An officer will check this. Open dream-chasers.cc/join for your witness code.\"}", null);
+			+ "\"message\":\"An officer will check this.\"}", null);
 		Outcome o = attestFor();
-		assertEquals("info An officer will check this. Open dream-chasers.cc/join for your witness code.", o.done.get(5, TimeUnit.SECONDS));
+		assertEquals("info An officer will check this.", o.done.get(5, TimeUnit.SECONDS));
 	}
 
 	@Test

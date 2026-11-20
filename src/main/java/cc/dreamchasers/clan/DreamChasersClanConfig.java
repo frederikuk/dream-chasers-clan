@@ -113,8 +113,6 @@ public interface DreamChasersClanConfig extends Config
 		name = "Officer roster sync",
 		description = TIP + "Officers and up only: when you close the clan Members screen, send the clan's member list and ranks to dream-chasers.cc, which updates the Wise Old Man group. "
 			+ "Names and rank titles only. "
-			+ "Also verify pickup: when a clan chat line or a private message you get holds a DRM- code from the site's join page, sends that code and the sender's name "
-			+ "so the site can verify them (nothing else from chat is sent), and tells the site every 5 minutes that an officer's plugin is online. "
 			+ "Needs you signed in; Enable everything leaves it alone" + TIP_END,
 		warning = "This feature submits your IP address to a 3rd-party server not controlled or verified by RuneLite developers",
 		section = CONNECT_SECTION,

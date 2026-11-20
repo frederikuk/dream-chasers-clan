@@ -62,8 +62,7 @@ changes once you close and reopen them.
 - **Officer roster sync** (off by default, officers only). When you close the
   clan **Members** screen in game, the plugin sends the clan's member list
   (names and rank titles, nothing else) to dream-chasers.cc, which updates the
-  clan's Wise Old Man group. It also verifies newcomers who say their witness
-  code in clan chat or PM it to you. See Officer roster sync (below). Same
+  clan's Wise Old Man group. See Officer roster sync (below). Same
   IP-address warning. **Enable everything** leaves it alone.
 - **Join DRM Live** (off by default). Shows the DRM Live section (below). Same
   IP-address warning.
@@ -167,26 +166,6 @@ reads.
 - The player menu (top right of the panel) shows "Roster sync is on". If the
   site says you're not an officer, the sync stops until you log in again or
   tick the setting again, and the menu shows "Roster sync is off".
-
-### Verify pickup
-
-The same setting verifies newcomers for you. A member on mobile gets a witness
-code at dream-chasers.cc/join and says it in clan chat, or PMs it to you. The
-plugin sends that code and the sender's name (which the game sets, so it
-proves the account) to the site, and the site verifies them. Nobody types
-anything. A request that needs an officer to look at it (a new Discord
-account, a disputed name, an officer-rank name and a few others) waits on the
-site's officer joins page.
-
-- **What it reads:** clan chat and the PMs you receive. Only a line holding a
-  code (`DRM-` and six characters) leaves your PC, and a PM only from someone
-  in the clan. Every other line is ignored.
-- **What it sends:** the code, the sender's name, whether it was clan chat or
-  a PM, and your own RSN. At most 20 in 10 minutes, two codes per sender.
-- **Online dot:** while the setting is on, the plugin tells the site every 5
-  minutes that an officer's plugin is online, and that it's gone when you log
-  out or turn it off. The join page shows newcomers a green dot when saying
-  the code will work.
 
 ## Signing out
 
