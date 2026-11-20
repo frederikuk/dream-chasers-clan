@@ -178,8 +178,10 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	// The "Collection log" popup: NOTIFICATION_START, then its text at NOTIFICATION_DELAY
 	private boolean popupStarted;
 	private Boolean clogHintShown;
-	/** The time last sent per boss and team size, so a standing PB is reported once a session. */
+	/** The time the site last took per boss and team size, so a standing PB is reported once a session. */
 	private final Map<String, Double> pbSent = new ConcurrentHashMap<>();
+	/** Counts forgetPbsSent calls; an answer from an earlier count marks nothing. */
+	private volatile int pbSession;
 	// New slots waiting a few ticks for their drop; client thread only
 	private final ClogTracker clogTracker = new ClogTracker();
 	/** The clan's big-drop amount, from the Hall of Fame feed; null until the site has said. */
@@ -350,7 +352,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		clanCheckDue = true;
 		ownClan = OwnClan.Reading.UNKNOWN;
 		pbParser.reset();
-		pbSent.clear();
+		forgetPbsSent();
 		clogTracker.reset();
 	}
 
@@ -388,7 +390,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 			clogTracker.reset();
 			if (state == GameState.LOGIN_SCREEN)
 			{
-				pbSent.clear();     // maybe another account next
+				forgetPbsSent();     // maybe another account next
 				liveOnStream = false;
 				RosterSync r = roster;
 				if (r != null)
@@ -484,23 +486,51 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		{
 			return;
 		}
-		Double last = pbSent.get(record.key());
-		if (!record.isPb() && last != null && last <= record.getSeconds())
+		if (!pbDue(record))
 		{
-			return;     // this standing PB was already sent this session
+			return;     // the site already took this standing PB this session
 		}
-		pbSent.put(record.key(), record.getSeconds());
-		api.postAuthed("/plugin/pbs", Uploads.pb(record, rsn, Clock.systemUTC().instant(), accountDigest()), SubmitResponse.class, result ->
+		int session = pbSession;
+		api.postAuthed("/plugin/pbs", Uploads.pb(record, rsn, Clock.systemUTC().instant(), accountDigest()), SubmitResponse.class,
+			result -> pbAnswered(record, session, result));
+	}
+
+	/** A new PB always goes; a standing one only until the site has taken it (or a better one) this session. */
+	boolean pbDue(PbRecord record)
+	{
+		Double last = pbSent.get(record.key());
+		return record.isPb() || last == null || last > record.getSeconds();
+	}
+
+	/**
+	 * Only a 2xx marks a PB sent, so a refused or lost one goes again with the
+	 * boss's next time line, with no relog. Nothing is scheduled: the next kill
+	 * sets the pace, and the client's back-off (and the site's Retry-After on a
+	 * 429) holds it back. {@code session} keeps an answer that lands after a
+	 * logout from marking the next account's PB.
+	 */
+	void pbAnswered(PbRecord record, int session, ApiResult<SubmitResponse> result)
+	{
+		if (result.getStatus() == ApiResult.Status.UNAUTHORIZED)
 		{
-			if (result.getStatus() == ApiResult.Status.UNAUTHORIZED)
-			{
-				forgetToken();
-			}
-			if (result.getStatus() != ApiResult.Status.OK)
-			{
-				log.debug("PB for {} not taken: {}", record.getBoss(), result.getMessage());
-			}
-		});
+			forgetToken();
+		}
+		if (result.getStatus() != ApiResult.Status.OK)
+		{
+			log.debug("PB for {} not taken: {}", record.getBoss(), result.getMessage());
+			return;
+		}
+		if (session == pbSession)
+		{
+			pbSent.merge(record.key(), record.getSeconds(), Math::min);
+		}
+	}
+
+	/** A logout to the login screen, or the plugin stopping: the next account starts with nothing sent. */
+	void forgetPbsSent()
+	{
+		pbSession++;
+		pbSent.clear();
 	}
 
 	// ---- live raid stats ----
