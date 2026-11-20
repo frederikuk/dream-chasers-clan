@@ -163,6 +163,40 @@ public class HeldSignInTest
 	}
 
 	@Test
+	public void aVerifiedMembersHeldAltIsNotCalledVerified()
+	{
+		// verified on Main, Verify for Alt is held: the site's /me for that token is the verified shape
+		// (Events stay), listing Main only, with no status: Alt is still with the officers
+		Scripted p = new Scripted();
+		p.beginSignIn(false);
+		p.waitedOn = "Alt";     // what signedIn(token, name, "Alt") leaves
+		assertTrue("Events load: the member is verified", p.onMe(me(ApiResult.Status.OK, "{\"name\":\"Main\",\"verified\":[\"Main\"]}")));
+		assertFalse(p.signInUnverified);
+		assertEquals("never 'now verified Alt'", List.of("waiting null", "now verified Main"), p.shown);
+		assertEquals("Alt is still waited on", "Alt", p.waitedOn);
+		assertEquals(List.of("Main"), p.verifiedNames);
+
+		p.shown.clear();
+		assertTrue(p.onMe(me(ApiResult.Status.OK, "{\"name\":\"Main\",\"verified\":[\"Main\"]}")));
+		assertEquals("said once", List.of("waiting null"), p.shown);
+
+		p.shown.clear();
+		assertTrue("an officer approved Alt", p.onMe(me(ApiResult.Status.OK, "{\"name\":\"Main\",\"verified\":[\"Main\",\"alt\"]}")));
+		assertEquals("named once it is verified", List.of("waiting null", "now verified Alt"), p.shown);
+		assertEquals(null, p.waitedOn);
+
+		Scripted q = new Scripted();
+		q.beginSignIn(false);
+		q.waitedOn = "Alt";
+		q.onMe(me(ApiResult.Status.OK, "{\"name\":\"Main\",\"verified\":[\"Main\",\"Other\"]}"));
+		assertEquals("several, none waited on: the plain line", List.of("waiting null", "now verified null"), q.shown);
+
+		assertTrue(DreamChasersClanPlugin.isListed("Iron_Alt", List.of("iron alt")));
+		assertFalse(DreamChasersClanPlugin.isListed(null, List.of("Alt")));
+		assertFalse(DreamChasersClanPlugin.isListed("Alt", null));
+	}
+
+	@Test
 	public void theVerifiedLineNeverFallsBackToTheDiscordName()
 	{
 		// a restart forgets what was waited on; a cleared request later verified another way

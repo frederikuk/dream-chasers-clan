@@ -1501,10 +1501,18 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		{
 			showWaiting(waitingOn);
 		}
-		if (was && !signInUnverified)
+		boolean beforeVerified = isListed(before, me.getVerified());
+		if (!signInUnverified && beforeVerified)
 		{
+			// the name waited on is verified now (this answer, or a later one for a member already verified)
 			waitedOn = null;
-			showNowVerified(before != null && !before.isEmpty() ? before : nowVerifiedName(me.getVerified()));
+			showNowVerified(before);
+		}
+		else if (was && !signInUnverified)
+		{
+			// verified, but not as the name waited on: a verified member's held alt keeps Events and
+			// stays with the officers, so the line names what is verified and the alt is still waited on
+			showNowVerified(nowVerifiedName(me.getVerified()));
 		}
 		if (me.getVerified() != null)
 		{
@@ -1512,6 +1520,13 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 			updateVerified();
 		}
 		return !signInUnverified;
+	}
+
+	/** Whether {@code name} is one of {@code names}, as game names compare. Static for tests. */
+	static boolean isListed(String name, List<String> names)
+	{
+		String key = rsnKey(name);
+		return key != null && names != null && names.stream().anyMatch(n -> key.equals(rsnKey(n)));
 	}
 
 	/**
