@@ -370,6 +370,39 @@ public class DreamChasersPanelTest
 	}
 
 	@Test
+	public void aHeldSignInWaitsForAnOfficerAndOnlyEventsWait() throws Exception
+	{
+		// sign-in is never held (20 Nov 2026): signed in, but Events waits for the officer
+		Calls calls = new Calls();
+		DreamChasersPanel panel = newPanel(calls);
+		panel.setConnected(true);
+		panel.setSignedInAs("Melk");
+		panel.setOwnClan(null, "Melk");
+		panel.setWaitingFor("Melk");
+		panel.showEvents(ok("events.json", EventsResponse.class));
+		flush();
+		assertTrue(allText(panel).contains("Events show once you're verified."));
+		assertFalse("no events while held", allText(panel).contains("[Events page]"));
+		assertTrue(statusText(panel), statusText(panel).contains("Waiting for an officer to check Melk."));
+		assertFalse("no codes anywhere", (allText(panel) + statusText(panel)).toLowerCase().contains("code"));
+		assertEquals("nothing to press: the plugin keeps asking", List.of("~Waiting for an officer to check Melk",
+			"Join our Discord", "Open dream-chasers.cc", "Sign out"), menuLabels(panel));
+		assertMenuFits(panel);
+		panel.setWaitingFor("Bigbossrsn12");
+		flush();
+		assertMenuFits(panel);     // a 12-letter name wraps
+
+		panel.setWaitingFor(null);     // the officer approved: /plugin/me says verified
+		panel.setVerifiedAs("Melk");
+		flush();
+		assertEquals("~Verified as Melk", menuLabels(panel).get(0));
+		assertFalse(allText(panel).contains("Events show once you're verified."));
+		assertTrue(allText(panel).contains("[Events page]"));
+		assertFalse(statusText(panel).contains("Waiting"));
+		assertFalse("no second Connect", calls.log.contains("verifyStart"));
+	}
+
+	@Test
 	public void thePlayerMenuOffersTheDiscordInviteOnceKnownAndChecksIt() throws Exception
 	{
 		Calls calls = new Calls();

@@ -202,6 +202,12 @@ public class DreamChasersPanel extends PluginPanel
 	private String verifyRsn;
 	/** The logged-in name when the site has verified it to this member: the menu offers no verify then. */
 	private String verifiedAs;
+	/**
+	 * The sign-in isn't verified yet (a held or awaiting-roster answer): the
+	 * name an officer has to check, "" when the site gave none; null once it
+	 * is verified. Everything posts meanwhile; only Events waits.
+	 */
+	private String waitingFor;
 	/** "Enable everything" was ticked before signing in (so it unticked itself): the status line says why. */
 	private boolean enableAllRefused;
 	/** Sections the member folded (by key); only their title row shows. */
@@ -623,6 +629,18 @@ public class DreamChasersPanel extends PluginPanel
 		});
 	}
 
+	/** The sign-in's name waiting on an officer ("" for none given), or null once verified (or signed out). */
+	public void setWaitingFor(String name)
+	{
+		onEdt(() ->
+		{
+			waitingFor = name;
+			renderHeader();
+			renderStatus();
+			renderEvents();
+		});
+	}
+
 	/**
 	 * A sign-in, verify or typed code is over; {@code message} (or null) goes
 	 * in the status line until the next fold to verified, sign-out or attempt.
@@ -823,10 +841,15 @@ public class DreamChasersPanel extends PluginPanel
 		player.setToolTipText(signedInAs != null ? whoLine() : "Sign in");
 	}
 
-	/** "Verified as NAME" once the site has verified the logged-in name, else "Connected as NAME". */
+	/**
+	 * "Waiting for an officer to check NAME" while the sign-in isn't verified,
+	 * "Verified as NAME" once the site has verified the logged-in name, else
+	 * "Connected as NAME".
+	 */
 	private String whoLine()
 	{
-		return verifiedAs != null ? "Verified as " + verifiedAs : "Connected as " + signedInAs;
+		return waitingFor != null ? cc.dreamchasers.clan.JoinFlow.waitingLine(waitingFor)
+			: verifiedAs != null ? "Verified as " + verifiedAs : "Connected as " + signedInAs;
 	}
 
 	/**
@@ -839,7 +862,7 @@ public class DreamChasersPanel extends PluginPanel
 		boolean signedIn = signedInAs != null;
 		JPopupMenu menu = new JPopupMenu();
 		menu.setName("accountMenu");
-		menu.add(greyed(signedIn ? whoLine() : "Not signed in"));
+		addGreyed(menu, signedIn ? whoLine() : "Not signed in");
 		if (verifyWaitCode != null)
 		{
 			addGreyed(menu, "Approve in your browser: " + verifyWaitCode);
@@ -859,6 +882,10 @@ public class DreamChasersPanel extends PluginPanel
 		else if (signedIn && verifiedAs != null)
 		{
 			// verified: nothing left to do, whatever the clan record says (it may not have loaded, or there is none)
+		}
+		else if (signedIn && waitingFor != null && waitingFor.equalsIgnoreCase(verifyRsn))
+		{
+			// this name is with the officers already: nothing to press, the plugin keeps asking
 		}
 		else if (verifyBlocker != null)
 		{
@@ -1056,6 +1083,12 @@ public class DreamChasersPanel extends PluginPanel
 			status.setText(html(esc(revoked) + "."));
 			return;
 		}
+		if (connected && signedInAs != null && waitingFor != null)
+		{
+			status.setForeground(Brand.TEXT);
+			status.setText(html(esc(cc.dreamchasers.clan.JoinFlow.waitingLine(waitingFor)) + "."));
+			return;
+		}
 		status.setForeground(Brand.MUTED);
 		if (!connected)
 		{
@@ -1099,6 +1132,12 @@ public class DreamChasersPanel extends PluginPanel
 		if (signedInAs == null)
 		{
 			events.add(text("Events are for clan members. Sign in from the menu at the top right to see them.", Brand.MUTED));
+			done(events);
+			return;
+		}
+		if (waitingFor != null)
+		{
+			events.add(text("Events show once you're verified.", Brand.MUTED));
 			done(events);
 			return;
 		}

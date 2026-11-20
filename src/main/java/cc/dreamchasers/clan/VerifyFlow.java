@@ -143,7 +143,8 @@ public class VerifyFlow extends BrowserApproval<JoinAttestResponse, VerifyFlow.J
 		{
 			return () -> job.failed("You pressed Deny in the browser, so nothing was linked.");
 		}
-		if (JoinAttestResponse.VERIFIED.equals(r.getStatus()) && !job.reading.equals(ownClan.get()))
+		// any answer that hands over a token, held ones too
+		if ((JoinAttestResponse.VERIFIED.equals(r.getStatus()) || JoinFlow.heldWithToken(r)) && !job.reading.equals(ownClan.get()))
 		{
 			return () ->
 			{

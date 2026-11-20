@@ -80,6 +80,12 @@ public class VerifyFlowTest
 		}
 
 		@Override
+		public void unverified(String token, String name, String message)
+		{
+			done.complete("unverified " + token + " " + name + " | " + message);
+		}
+
+		@Override
 		public void finished(String message, boolean isError)
 		{
 			done.complete((isError ? "error " : "info ") + message);
@@ -186,6 +192,36 @@ public class VerifyFlowTest
 		Outcome o2 = new Outcome();
 		flow(Duration.ofMinutes(10)).start(o2);
 		assertEquals("info Not on the roster yet.", o2.done.get(5, TimeUnit.SECONDS));
+	}
+
+	private static final String HELD_TOKEN = "{\"apiVersion\":1,\"status\":\"held\",\"reason\":\"rsn_taken\",\"rsn\":\"Tadeko\","
+		+ "\"message\":\"An officer will check this.\",\"token\":\"drm_pt_held\",\"name\":\"Tadeko\",\"expiresAt\":\"2027-11-07T20:00:00Z\"}";
+
+	@Test
+	public void heldWithATokenSignsInUnverified() throws Exception
+	{
+		fake.reply(200, START, null).reply(200, PENDING, null).reply(202, HELD_TOKEN, null);
+		Outcome o = new Outcome();
+		VerifyFlow f = flow(Duration.ofMinutes(10));
+		f.start(o);
+		assertEquals("unverified drm_pt_held Tadeko | Signed in. Waiting for an officer to check Tadeko.", o.done.get(5, TimeUnit.SECONDS));
+		assertFalse(f.isWaiting());
+		TimeUnit.MILLISECONDS.sleep(50);
+		assertEquals("no poll after the answer, and no DELETE: the token is kept", 3, size());
+	}
+
+	@Test
+	public void aChangedAccountDiscardsAHeldTokenToo() throws Exception
+	{
+		fake.reply(200, START, null).reply(200, PENDING, null).reply(202, HELD_TOKEN, null);
+		OwnClan.Reading other = OwnClan.judge(true, "DRM Chasers", "Someone Else", true, HASH + 1);
+		VerifyFlow f = new VerifyFlow(api, executor, clock, opened::add, () -> size() >= 2 ? other : IN_CLAN, "0.6.0",
+			Duration.ofMillis(10), Duration.ofMinutes(10), Duration.ofMinutes(2));
+		Outcome o = new Outcome();
+		f.start(o);
+		assertEquals("error " + VerifyFlow.CHANGED, o.done.get(5, TimeUnit.SECONDS));
+		waitFor(4);
+		assertEquals("the site is told to drop the token it handed over", "DELETE", fake.requests.get(3).request.method());
 	}
 
 	@Test

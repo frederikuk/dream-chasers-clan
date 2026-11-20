@@ -28,7 +28,14 @@ public class JoinFlow
 		/** Linked: store {@code token} as the sign-in, exactly like Connect. */
 		void verified(String token, String name, String message);
 
-		/** Over without a token; {@code isError} false for awaiting-roster and held answers. */
+		/**
+		 * Held or awaiting the roster, with a token (sites since 20 Nov 2026):
+		 * store it as the sign-in, but not as verified. Everything posts; Events
+		 * waits until {@code /plugin/me} says the name is verified.
+		 */
+		void unverified(String token, String name, String message);
+
+		/** Over without a token; {@code isError} false for awaiting-roster and held answers from older sites. */
 		void finished(String message, boolean isError);
 	}
 
@@ -147,13 +154,20 @@ public class JoinFlow
 	}
 
 	/**
-	 * What an attest-shaped answer means: a token with the "Verified" line, or
-	 * the site's awaiting-roster or held message. {@code rsn} stands in when the
+	 * What an attest-shaped answer means: a token with the "Verified" line, a
+	 * held or awaiting-roster token with the waiting line, or (older sites) the
+	 * site's awaiting-roster or held message. {@code rsn} stands in when the
 	 * answer names none. The line names the Discord account the site linked,
 	 * when it says; {@code after} follows the verified line.
 	 */
 	static void tell(JoinAttestResponse r, String rsn, Outcome outcome, String after)
 	{
+		if (heldWithToken(r))
+		{
+			String name = r.getRsn() == null ? rsn : r.getRsn();
+			outcome.unverified(r.getToken(), r.getName(), "Signed in. " + waitingLine(name) + ".");
+			return;
+		}
 		if (JoinAttestResponse.VERIFIED.equals(r.getStatus()) && r.getToken() != null && !r.getToken().isEmpty())
 		{
 			String name = r.getRsn() == null ? rsn : r.getRsn();
@@ -176,6 +190,19 @@ public class JoinFlow
 			return;
 		}
 		outcome.finished("The site sent something unexpected", true);
+	}
+
+	/** A held or awaiting-roster answer that signs this PC in all the same. */
+	static boolean heldWithToken(JoinAttestResponse r)
+	{
+		return (JoinAttestResponse.HELD.equals(r.getStatus()) || JoinAttestResponse.AWAITING_ROSTER.equals(r.getStatus()))
+			&& r.getToken() != null && !r.getToken().isEmpty();
+	}
+
+	/** The panel's line while the sign-in isn't verified yet; no codes, nothing to do. */
+	public static String waitingLine(String name)
+	{
+		return "Waiting for an officer to check " + (name == null || name.trim().isEmpty() ? "your name" : name.trim());
 	}
 
 	static String message(String m, String fallback)

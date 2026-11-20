@@ -12,8 +12,10 @@ import lombok.Data;
 /**
  * {@code POST /api/join/attest}. 200 {@code verified} carries the plugin token
  * ({@code token}, {@code name}, {@code expiresAt});
- * 202 {@code awaiting_roster} or {@code held} carries a message for the member
- * and no token. {@code GET /api/join/poll} (Verify in browser) answers in the
+ * 202 {@code awaiting_roster} or {@code held} carries a message for the member,
+ * and since 20 Nov 2026 the same token fields too: a sign-in that isn't
+ * verified yet (sign-in is never held; only Events waits). Older sites send
+ * no token there. {@code GET /api/join/poll} (Verify in browser) answers in the
  * same shape, plus {@code pending} and {@code denied}.
  */
 @Data

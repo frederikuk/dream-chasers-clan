@@ -550,6 +550,19 @@ public class DrmApiClientTest
 	}
 
 	@Test
+	public void anUnverifiedSignInsEventsAre403NotASignOut() throws Exception
+	{
+		// sign-in is never held (20 Nov 2026): the site refuses Events to a token that isn't verified yet, and keeps it
+		token = "drm_pt_held";
+		http.reply(403, "{\"error\":\"Events show once you're verified\",\"unverified\":true}", "private, max-age=0");
+
+		ApiResult<EventsResponse> r = fetch(Endpoint.EVENTS, false);
+
+		assertEquals("FORBIDDEN keeps the token; only UNAUTHORIZED forgets it", ApiResult.Status.FORBIDDEN, r.getStatus());
+		assertNull(r.getValue());
+	}
+
+	@Test
 	public void repeated403sBackOff() throws Exception
 	{
 		// a WAF or challenge page answers 403 and the token is kept, so the panel's 60 s refresh must not hammer it

@@ -198,6 +198,12 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	/** Names verified in this session that a {@code /plugin/me} answer hasn't listed yet. */
 	private final Set<String> justVerified = ConcurrentHashMap.newKeySet();
 	/**
+	 * The sign-in came from a held or awaiting-roster answer and {@code /plugin/me}
+	 * hasn't said it's verified since: everything posts, Events waits. False
+	 * until an answer says otherwise (older sites only had verified sign-ins).
+	 */
+	volatile boolean signInUnverified;
+	/**
 	 * Set when the logged-in name is needed for the Verify fold but the game
 	 * hasn't given it yet (it has none at the LOGGED_IN event itself): checked
 	 * again on each game tick until it has. Client thread only.
@@ -1393,26 +1399,79 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		{
 			api.fetch(Endpoint.ME, force, result ->
 			{
-				MeResponse me = result.getValue();
-				if (result.getStatus() == ApiResult.Status.OK && me != null && me.getVerified() != null)
+				boolean wasUnverified = signInUnverified;
+				// Events only for a verified sign-in; a 401 still asks, so the panel hears why and the token goes
+				if (onMe(result) || result.getStatus() == ApiResult.Status.UNAUTHORIZED)
 				{
-					verifiedNames = withJustVerified(me.getVerified());
-					updateVerified();
+					fetchEvents(api, panel, force || wasUnverified);
 				}
-			});
-			api.fetch(Endpoint.EVENTS, force, result ->
-			{
-				if (result.getStatus() == ApiResult.Status.UNAUTHORIZED)
-				{
-					// The site no longer knows this token (revoked or expired).
-					forgetToken();
-				}
-				panel.showEvents(result);
 			});
 		}
 		refreshLive(force);
 		refreshSplash();
 		refreshTiles(force);
+	}
+
+	private void fetchEvents(DrmApiClient api, DreamChasersPanel panel, boolean force)
+	{
+		api.fetch(Endpoint.EVENTS, force, result ->
+		{
+			if (result.getStatus() == ApiResult.Status.UNAUTHORIZED)
+			{
+				// The site no longer knows this token (revoked or expired). A 403 keeps it.
+				forgetToken();
+			}
+			panel.showEvents(result);
+		});
+	}
+
+	/**
+	 * A {@code /plugin/me} answer: the names verified to this member (for the
+	 * Verify fold), and whether the sign-in itself is verified yet. Asked at
+	 * the panel's usual cadence, so a held member's sign-in turns verified by
+	 * itself once an officer approves (no second Connect). Returns whether
+	 * Events may load.
+	 */
+	boolean onMe(ApiResult<MeResponse> result)
+	{
+		MeResponse me = result.getValue();
+		if (result.getStatus() != ApiResult.Status.OK || me == null)
+		{
+			return !signInUnverified;     // a cached or failed answer changes nothing
+		}
+		boolean was = signInUnverified;
+		signInUnverified = me.notVerifiedYet();
+		showWaiting(signInUnverified ? (me.getName() == null ? "" : me.getName()) : null);
+		if (was && !signInUnverified)
+		{
+			showNowVerified(me.getName());
+		}
+		if (me.getVerified() != null)
+		{
+			verifiedNames = withJustVerified(me.getVerified());
+			updateVerified();
+		}
+		return !signInUnverified;
+	}
+
+	/** The name a sign-in that isn't verified yet waits on ("" when unnamed, null when it is verified); overridden in tests. */
+	void showWaiting(String name)
+	{
+		DreamChasersPanel panel = this.panel;
+		if (panel != null)
+		{
+			panel.setWaitingFor(name);
+		}
+	}
+
+	/** The hold cleared while signed in: say so, through the fold to verified that follows; overridden in tests. */
+	void showNowVerified(String name)
+	{
+		DreamChasersPanel panel = this.panel;
+		if (panel != null)
+		{
+			panel.verifiedDone(name == null || name.isEmpty() ? "Verified. Events show now." : "Verified as " + name + ". Events show now.");
+		}
 	}
 
 	/** With the panel shut and collection log posting on: only the Hall of Fame (usually from the cache), for the big-drop threshold. */
@@ -1528,9 +1587,10 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		});
 	}
 
-	/** Stores a new token and loads what it unlocks. */
-	private void signedIn(String token, String name)
+	/** Stores a new token and loads what it unlocks: everything, or all but Events while it isn't verified yet. */
+	private void signedIn(String token, String name, boolean verified)
 	{
+		signInUnverified = !verified;
 		configManager.setConfiguration(DreamChasersClanConfig.GROUP, DreamChasersClanConfig.TOKEN_KEY, token);
 		configManager.setConfiguration(DreamChasersClanConfig.GROUP, DreamChasersClanConfig.SIGNED_IN_AS_KEY,
 			name == null || name.isEmpty() ? "clan member" : name);
@@ -1541,9 +1601,14 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 			return;
 		}
 		panel.setSignedInAs(signedInName());
+		panel.setWaitingFor(verified ? null : name == null ? "" : name);
+		api.invalidate(Endpoint.ME);     // an earlier sign-in's answer says nothing about this one
 		updateRosterStatus();
 		backfillDue = true;
-		api.fetch(Endpoint.EVENTS, true, panel::showEvents);
+		if (verified)
+		{
+			fetchEvents(api, panel, true);
+		}
 		refreshLive(true);
 	}
 
@@ -1595,8 +1660,15 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 			public void verified(String token, String name, String message)
 			{
 				panel.verifiedDone(message);     // stays through the fold to verified that follows
-				signedIn(token, name);
+				signedIn(token, name, true);
 				addVerified(name);
+			}
+
+			@Override
+			public void unverified(String token, String name, String message)
+			{
+				panel.verifyDone(message, false);
+				signedIn(token, name, false);
 			}
 
 			@Override
@@ -1647,8 +1719,15 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 			public void verified(String token, String name, String message)
 			{
 				panel.verifiedDone(message);     // stays through the fold to verified that follows
-				signedIn(token, name);
+				signedIn(token, name, true);
 				addVerified(name);
+			}
+
+			@Override
+			public void unverified(String token, String name, String message)
+			{
+				panel.verifyDone(message, false);
+				signedIn(token, name, false);
 			}
 
 			@Override
@@ -1922,6 +2001,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	{
 		verifiedNames = Collections.emptyList();
 		justVerified.clear();
+		signInUnverified = false;
 		liveConsented = false;
 		liveOnStream = false;
 		configManager.unsetConfiguration(DreamChasersClanConfig.GROUP, DreamChasersClanConfig.TOKEN_KEY);
@@ -1934,6 +2014,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		{
 			panel.setSignedInAs(null);
 			panel.setVerifiedAs(null);
+			panel.setWaitingFor(null);
 			panel.setRosterSync(null);
 		}
 		rosterLine = null;

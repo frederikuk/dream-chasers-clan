@@ -3,15 +3,17 @@
 The Dream Chasers clan's own RuneLite plugin. It adds a sidebar panel with:
 
 - **Events**: the next clan event (with a countdown, or LIVE) and what's coming
-  up. Events are for clan members only, so this needs a one-time sign-in (below).
+  up. Events are for clan members only, so this needs a one-time sign-in (below)
+  with your name verified.
 - **Competition**: the clan's current Wise Old Man competition and its top 10.
 - **Hall of Fame**: the most recent clan firsts.
 
 Everything comes from the clan site, `https://dream-chasers.cc`. The Dream
 Chasers wordmark at the top opens the site. The round player button in the top
 right corner is always there and opens the player menu: who you're signed in as
-("Verified as …" once your name is verified, "Connected as …" before that, "Not
-signed in" before signing in), **Sign in with Discord** (or **Verify NAME for
+("Verified as …" once your name is verified, "Connected as …" before that,
+"Waiting for an officer to check …" while an officer still has to look at it,
+"Not signed in" before signing in), **Sign in with Discord** (or **Verify NAME for
 Discord** for a logged-in name that isn't verified yet) with **Enter a code from
 the site…** beside it, **Join our Discord**, the site, and **Sign out**. When signing in isn't possible yet, the menu says why in a
 greyed-out line.
@@ -123,8 +125,12 @@ Chasers.
    the panel's status line shows. **Cancel** in the player menu stops waiting.
 3. The panel picks up the answer by itself: it is signed in, and the Verified
    role arrives in Discord within about a minute once you're in the server.
-   If your name isn't on the clan roster yet, or an officer has to check, the
-   status line says so and dream-chasers.cc/join tells you what's next.
+   If your name isn't on the clan roster yet, or an officer has to check, you
+   are signed in all the same: your PBs, collection log and the rest post as
+   normal, and the status line says "Waiting for an officer to check NAME".
+   Only Events waits ("Events show once you're verified"). The plugin keeps
+   asking the site, and once your name is verified it shows "Verified as
+   NAME" and loads Events, with no second sign-in.
 
 Have a code from dream-chasers.cc/join instead? **Enter a code from the
 site…** in the player menu asks for it, then asks you to check the Discord name
