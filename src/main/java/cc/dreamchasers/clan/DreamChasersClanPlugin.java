@@ -203,6 +203,8 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	 * until an answer says otherwise (older sites only had verified sign-ins).
 	 */
 	volatile boolean signInUnverified;
+	/** Counts sign-ins and sign-outs; a {@code /plugin/me} answer asked under an earlier count is dropped. */
+	volatile int signInGen;
 	/**
 	 * Set when the logged-in name is needed for the Verify fold but the game
 	 * hasn't given it yet (it has none at the LOGGED_IN event itself): checked
@@ -1397,15 +1399,8 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		api.fetch(Endpoint.LINKS, force, panel::showLinks);
 		if (signedInName() != null)
 		{
-			api.fetch(Endpoint.ME, force, result ->
-			{
-				boolean wasUnverified = signInUnverified;
-				// Events only for a verified sign-in; a 401 still asks, so the panel hears why and the token goes
-				if (onMe(result) || result.getStatus() == ApiResult.Status.UNAUTHORIZED)
-				{
-					fetchEvents(api, panel, force || wasUnverified);
-				}
-			});
+			int gen = signInGen;
+			api.fetch(Endpoint.ME, force, result -> onMeAnswer(gen, result, wasUnverified -> fetchEvents(api, panel, force || wasUnverified)));
 		}
 		refreshLive(force);
 		refreshSplash();
@@ -1426,6 +1421,27 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	}
 
 	/**
+	 * The answer to a {@code /plugin/me} asked while {@code gen} was the
+	 * sign-in count. One for an earlier sign-in (a Verify handed over a new
+	 * token while it was on its way) is dropped, so an old verified token's
+	 * answer never marks a new held one verified. {@code loadEvents} gets
+	 * whether the sign-in was waiting until this answer. Package-private for tests.
+	 */
+	void onMeAnswer(int gen, ApiResult<MeResponse> result, Consumer<Boolean> loadEvents)
+	{
+		if (gen != signInGen)
+		{
+			return;
+		}
+		boolean wasUnverified = signInUnverified;
+		// Events only for a verified sign-in; a 401 still asks, so the panel hears why and the token goes
+		if (onMe(result) || result.getStatus() == ApiResult.Status.UNAUTHORIZED)
+		{
+			loadEvents.accept(wasUnverified);
+		}
+	}
+
+	/**
 	 * A {@code /plugin/me} answer: the names verified to this member (for the
 	 * Verify fold), and whether the sign-in itself is verified yet. Asked at
 	 * the panel's usual cadence, so a held member's sign-in turns verified by
@@ -1441,7 +1457,16 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		}
 		boolean was = signInUnverified;
 		signInUnverified = me.notVerifiedYet();
-		showWaiting(signInUnverified ? (me.getName() == null ? "" : me.getName()) : null);
+		String waitingOn = me.waitingOn();
+		if (signInUnverified && waitingOn == null)
+		{
+			// nothing is with the officers (cleared, or the name went to someone else): say to ask again
+			showNotVerified(JoinFlow.message(me.getMessage(), NOT_VERIFIED));
+		}
+		else
+		{
+			showWaiting(waitingOn);
+		}
 		if (was && !signInUnverified)
 		{
 			showNowVerified(me.getName());
@@ -1461,6 +1486,20 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		if (panel != null)
 		{
 			panel.setWaitingFor(name);
+		}
+	}
+
+	/** Said when {@code /plugin/me} has no line of its own for a sign-in nothing is waiting on. */
+	static final String NOT_VERIFIED = "This sign-in isn't verified to a game name. "
+		+ "Press Verify for Discord in the menu at the top right to ask again.";
+
+	/** The sign-in isn't verified and no request is waiting: the site's line saying to ask again; overridden in tests. */
+	void showNotVerified(String message)
+	{
+		DreamChasersPanel panel = this.panel;
+		if (panel != null)
+		{
+			panel.setNotVerified(message);
 		}
 	}
 
@@ -1590,7 +1629,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	/** Stores a new token and loads what it unlocks: everything, or all but Events while it isn't verified yet. */
 	private void signedIn(String token, String name, boolean verified)
 	{
-		signInUnverified = !verified;
+		beginSignIn(verified);
 		configManager.setConfiguration(DreamChasersClanConfig.GROUP, DreamChasersClanConfig.TOKEN_KEY, token);
 		configManager.setConfiguration(DreamChasersClanConfig.GROUP, DreamChasersClanConfig.SIGNED_IN_AS_KEY,
 			name == null || name.isEmpty() ? "clan member" : name);
@@ -1997,8 +2036,16 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		forgetToken();
 	}
 
+	/** A new token: earlier {@code /plugin/me} answers stop counting. Package-private for tests. */
+	void beginSignIn(boolean verified)
+	{
+		signInGen++;
+		signInUnverified = !verified;
+	}
+
 	private void forgetToken()
 	{
+		signInGen++;
 		verifiedNames = Collections.emptyList();
 		justVerified.clear();
 		signInUnverified = false;

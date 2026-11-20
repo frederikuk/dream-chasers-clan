@@ -208,6 +208,13 @@ public class DreamChasersPanel extends PluginPanel
 	 * is verified. Everything posts meanwhile; only Events waits.
 	 */
 	private String waitingFor;
+	/**
+	 * The sign-in isn't verified and nothing is with the officers any more
+	 * (an officer cleared the request, or the name went to someone else):
+	 * the site's line saying to ask again; null otherwise. Events waits, and
+	 * the menu offers Verify again.
+	 */
+	private String notVerified;
 	/** "Enable everything" was ticked before signing in (so it unticked itself): the status line says why. */
 	private boolean enableAllRefused;
 	/** Sections the member folded (by key); only their title row shows. */
@@ -635,6 +642,24 @@ public class DreamChasersPanel extends PluginPanel
 		onEdt(() ->
 		{
 			waitingFor = name;
+			notVerified = null;
+			renderHeader();
+			renderStatus();
+			renderEvents();
+		});
+	}
+
+	/**
+	 * The sign-in isn't verified and no request is waiting on an officer:
+	 * {@code message} (the site's, saying to ask again) goes in the status
+	 * line, Events keeps waiting, and the menu offers Verify for the name.
+	 */
+	public void setNotVerified(String message)
+	{
+		onEdt(() ->
+		{
+			waitingFor = null;
+			notVerified = message;
 			renderHeader();
 			renderStatus();
 			renderEvents();
@@ -1089,6 +1114,12 @@ public class DreamChasersPanel extends PluginPanel
 			status.setText(html(esc(cc.dreamchasers.clan.JoinFlow.waitingLine(waitingFor)) + "."));
 			return;
 		}
+		if (connected && signedInAs != null && notVerified != null)
+		{
+			status.setForeground(Brand.WARN);
+			status.setText(html(esc(notVerified)));
+			return;
+		}
 		status.setForeground(Brand.MUTED);
 		if (!connected)
 		{
@@ -1135,7 +1166,7 @@ public class DreamChasersPanel extends PluginPanel
 			done(events);
 			return;
 		}
-		if (waitingFor != null)
+		if (waitingFor != null || notVerified != null)
 		{
 			events.add(text("Events show once you're verified.", Brand.MUTED));
 			done(events);

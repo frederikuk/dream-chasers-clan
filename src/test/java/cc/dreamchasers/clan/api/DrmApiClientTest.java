@@ -563,6 +563,32 @@ public class DrmApiClientTest
 	}
 
 	@Test
+	public void anAnswerSentBeforeAnInvalidateIsHandedBackButNotCached() throws Exception
+	{
+		// a new sign-in invalidates /me while the old token's /me is on its way: that answer mustn't be the cached copy
+		token = "drm_pt_old";
+		http.hold();
+		http.reply(200, "{\"name\":\"Oldname\",\"verified\":[\"Oldname\"]}", "private, max-age=300");
+		CompletableFuture<ApiResult<MeResponse>> late = new CompletableFuture<>();
+		api.fetch(Endpoint.ME, false, late::complete);
+		token = "drm_pt_held";
+		api.invalidate(Endpoint.ME);
+		http.release();
+		ApiResult<MeResponse> old = late.get(5, TimeUnit.SECONDS);
+		assertEquals("still handed to the caller", ApiResult.Status.OK, old.getStatus());
+
+		http.reply(200, "{\"name\":\"Melk\",\"unverified\":true,\"status\":\"held\",\"rsn\":\"Melk\"}", "private, max-age=300");
+		ApiResult<MeResponse> next = fetch(Endpoint.ME, false);
+		assertEquals("asked again, not the old copy", ApiResult.Status.OK, next.getStatus());
+		assertEquals("Melk", next.getValue().getRsn());
+		assertEquals("drm_pt_held", http.requests.get(1).request.header("Authorization").substring("Bearer ".length()));
+
+		ApiResult<MeResponse> cached = fetch(Endpoint.ME, false);
+		assertEquals("the new answer is cached as usual", ApiResult.Status.CACHED, cached.getStatus());
+		assertEquals(2, http.requests.size());
+	}
+
+	@Test
 	public void repeated403sBackOff() throws Exception
 	{
 		// a WAF or challenge page answers 403 and the token is kept, so the panel's 60 s refresh must not hammer it

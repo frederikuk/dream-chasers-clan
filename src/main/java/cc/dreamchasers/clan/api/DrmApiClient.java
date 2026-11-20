@@ -92,6 +92,8 @@ public class DrmApiClient
 	private final Map<String, Instant> notBefore = new ConcurrentHashMap<>();
 	private final Map<String, Integer> failures = new ConcurrentHashMap<>();
 	private final Set<String> inFlight = ConcurrentHashMap.newKeySet();
+	// bumped by invalidate/clearMembersOnly: an answer to a request sent before then isn't cached
+	private final Map<String, Integer> epochs = new ConcurrentHashMap<>();
 	// the site's last 403 text per path, handed back while that 403 is backed off
 	private final Map<String, String> refusals = new ConcurrentHashMap<>();
 
@@ -216,6 +218,7 @@ public class DrmApiClient
 			return;
 		}
 		lastAttempt.put(path, now);
+		int epoch = epochs.getOrDefault(path, 0);
 		http.newCall(request.build()).enqueue(new Callback()
 		{
 			@Override
@@ -233,7 +236,7 @@ public class DrmApiClient
 				ApiResult<T> result;
 				try (ResponseBody body = response.body())
 				{
-					result = handle(endpoint, response, readText(body));
+					result = handle(endpoint, response, readText(body), epoch);
 				}
 				catch (IOException e)
 				{
@@ -251,7 +254,7 @@ public class DrmApiClient
 	}
 
 	/** {@code text} is null when the body was over {@link #MAX_JSON_BYTES}. */
-	private <T> ApiResult<T> handle(Endpoint<T> endpoint, Response response, String text)
+	private <T> ApiResult<T> handle(Endpoint<T> endpoint, Response response, String text, int epoch)
 	{
 		int code = response.code();
 		if (code == 200)
@@ -275,7 +278,11 @@ public class DrmApiClient
 			Instant now = clock.instant();
 			int maxAge = Math.max(endpoint.getMinMaxAgeSeconds(),
 				CacheControl.maxAge(response.header("Cache-Control"), 0));
-			cache.put(endpoint.getPath(), new CacheEntry(value, now, now.plusSeconds(maxAge)));
+			if (epochs.getOrDefault(endpoint.getPath(), 0) == epoch)
+			{
+				// sent before an invalidate (an earlier sign-in's answer, say): handed back, never cached
+				cache.put(endpoint.getPath(), new CacheEntry(value, now, now.plusSeconds(maxAge)));
+			}
 			return new ApiResult<>(ApiResult.Status.OK, value, now, null);
 		}
 		if (endpoint.isAuthenticated() && (code == 401 || code == 403))
@@ -791,6 +798,7 @@ public class DrmApiClient
 		{
 			cache.remove(e.getPath());
 			lastAttempt.remove(e.getPath());
+			epochs.merge(e.getPath(), 1, Integer::sum);
 		}
 	}
 
@@ -799,6 +807,7 @@ public class DrmApiClient
 	{
 		cache.remove(endpoint.getPath());
 		lastAttempt.remove(endpoint.getPath());
+		epochs.merge(endpoint.getPath(), 1, Integer::sum);
 	}
 
 	private Request.Builder newRequest(String path)

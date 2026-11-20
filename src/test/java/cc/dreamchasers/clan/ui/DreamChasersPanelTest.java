@@ -403,6 +403,33 @@ public class DreamChasersPanelTest
 	}
 
 	@Test
+	public void aClearedRequestSaysAskAgainAndOffersVerifyForThatName() throws Exception
+	{
+		// an officer cleared the request: nothing is waiting, so the menu offers the name again
+		Calls calls = new Calls();
+		DreamChasersPanel panel = newPanel(calls);
+		panel.setConnected(true);
+		panel.setSignedInAs("Tadeko");
+		panel.setOwnClan(null, "Tadeko");
+		panel.setWaitingFor("Tadeko");
+		panel.showEvents(ok("events.json", EventsResponse.class));
+		panel.setNotVerified("This sign-in isn't verified to a game name. Press Connect <b>again</b> to ask again.");
+		flush();
+		assertFalse(statusText(panel), statusText(panel).contains("Waiting"));
+		assertTrue(statusText(panel), statusText(panel).contains("Press Connect &lt;b&gt;again&lt;/b&gt; to ask again."));
+		assertTrue("Events still wait", allText(panel).contains("Events show once you're verified."));
+		assertFalse(allText(panel).contains("[Events page]"));
+		List<String> menu = menuLabels(panel);
+		assertFalse(menu.get(0), menu.get(0).contains("Waiting"));
+		assertTrue(menu.toString(), menu.contains("Verify Tadeko for Discord"));
+
+		panel.setWaitingFor("Tadeko");     // asked again
+		flush();
+		assertTrue(statusText(panel).contains("Waiting for an officer to check Tadeko."));
+		assertFalse(menuLabels(panel).contains("Verify Tadeko for Discord"));
+	}
+
+	@Test
 	public void thePlayerMenuOffersTheDiscordInviteOnceKnownAndChecksIt() throws Exception
 	{
 		Calls calls = new Calls();
