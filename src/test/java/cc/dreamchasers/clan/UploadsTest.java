@@ -83,4 +83,31 @@ public class UploadsTest
 			Uploads.batch(Arrays.asList(new PbRecord("Chambers of Xeric", 1500.2, "3", null, true),
 				new PbRecord("Vorkath", 62.4, null, null, true)), "Lomaru", null).toString());
 	}
+
+	@Test
+	public void kcBodyMatchesTheSiteRoute()
+	{
+		assertEquals("{\"rsn\":\"Lomaru\",\"digest\":\"" + DIGEST + "\",\"boss\":\"Vorkath\",\"kc\":301,\"acct\":2}",
+			Uploads.kc("Vorkath", 301, "Lomaru", DIGEST, 2).toString());
+		assertEquals("{\"rsn\":\"Lomaru\",\"boss\":\"Vorkath\",\"kc\":301}",
+			Uploads.kc("Vorkath", 301, "Lomaru", null, null).toString());
+		carriesDigestNotHash(Uploads.kc("Vorkath", 301, "Lomaru", DIGEST, 0));
+	}
+
+	@Test
+	public void accountTypeGoesOnlyWhenKnownAndInRange()
+	{
+		for (int acct = 0; acct <= 6; acct++)
+		{
+			assertEquals(acct, Uploads.withAcct(new JsonObject(), acct).get("acct").getAsInt());
+		}
+		assertFalse(Uploads.withAcct(new JsonObject(), null).has("acct"));
+		assertFalse(Uploads.withAcct(new JsonObject(), -1).has("acct"));
+		assertFalse(Uploads.withAcct(new JsonObject(), 7).has("acct"));
+		JsonObject pb = Uploads.withAcct(Uploads.pb(new PbRecord("Vorkath", 62.4, null, null, false), "Lomaru", AT, DIGEST), 3);
+		assertTrue(pb.toString(), pb.toString().endsWith(",\"digest\":\"" + DIGEST + "\",\"acct\":3}"));
+		JsonObject batch = Uploads.withAcct(Uploads.batch(Collections.singletonList(new PbRecord("Vorkath", 62.4, null, null, false)),
+			"Lomaru", DIGEST), 1);
+		assertEquals(1, batch.get("acct").getAsInt());
+	}
 }

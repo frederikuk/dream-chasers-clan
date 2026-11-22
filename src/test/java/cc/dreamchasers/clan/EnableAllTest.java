@@ -98,7 +98,7 @@ public class EnableAllTest
 		Map<String, Boolean> config = new HashMap<>();
 		EnableAll.setAll(config::put, true);
 		assertEquals(new HashSet<>(Arrays.asList("connect", "postPbs", "postLoot", "clanSplash", "tilePacks", "joinLive",
-			"shareRaidStats")), config.keySet());
+			"shareRaidStats", "liveCompetitionKc")), config.keySet());
 		assertTrue(EnableAll.allOn(k -> config.getOrDefault(k, false)));
 		// never the token, the stream consent or the splash opt-in (set only by an upload)
 		assertFalse(config.containsKey(DreamChasersClanConfig.TOKEN_KEY));
@@ -120,18 +120,18 @@ public class EnableAllTest
 
 	private static void run(Settings s)
 	{
-		// tick: all seven on, and Connect is asked for once
+		// tick: all eight on, and Connect is asked for once
 		s.set(ALL, true);
 		s.drain();
 		assertTrue(s.allFeatures(true));
 		assertEquals(1, s.connects);
 
-		// one turned off by hand: "Enable everything" unticks, the other six stay on
+		// one turned off by hand: "Enable everything" unticks, the other seven stay on
 		s.set(DreamChasersClanConfig.PBS_KEY, false);
 		s.drain();
 		assertFalse(s.get(ALL));
 		assertFalse(s.get(DreamChasersClanConfig.PBS_KEY));
-		assertEquals(6, EnableAll.FEATURES.stream().filter(f -> s.get(f.getKey())).count());
+		assertEquals(7, EnableAll.FEATURES.stream().filter(f -> s.get(f.getKey())).count());
 
 		// tick again: back to all on
 		s.set(ALL, true);
@@ -146,7 +146,7 @@ public class EnableAllTest
 		assertEquals(2, s.connects);
 		assertTrue("a bounded number of events", s.events < 40);
 
-		// turning all seven on by hand ticks it, once the last one goes on (not before)
+		// turning all eight on by hand ticks it, once the last one goes on (not before)
 		for (EnableAll.Feature f : EnableAll.FEATURES)
 		{
 			assertFalse("not while one is still off", s.get(ALL));
@@ -161,7 +161,7 @@ public class EnableAllTest
 		s.set(DreamChasersClanConfig.LOOT_KEY, false);
 		s.drain();
 		assertFalse(s.get(ALL));
-		assertEquals(6, EnableAll.FEATURES.stream().filter(f -> s.get(f.getKey())).count());
+		assertEquals(7, EnableAll.FEATURES.stream().filter(f -> s.get(f.getKey())).count());
 	}
 
 	@Test
@@ -196,7 +196,7 @@ public class EnableAllTest
 			s.set(ALL, true);
 			s.drain();
 			assertFalse("it unticks itself", s.get(ALL));
-			assertTrue("and leaves the seven the member ticked on", s.allFeatures(true));
+			assertTrue("and leaves the eight the member ticked on", s.allFeatures(true));
 		}
 	}
 
@@ -233,7 +233,9 @@ public class EnableAllTest
 		assertFalse(defaults.tilePacks());
 		assertFalse(defaults.joinLive());
 		assertFalse(defaults.shareRaidStats());
-		assertEquals(7, EnableAll.FEATURES.size());
+		assertFalse(defaults.liveCompetitionKc());
+		assertEquals(8, EnableAll.FEATURES.size());
+		assertTrue(EnableAll.isFeatureKey("liveCompetitionKc"));
 		assertTrue(EnableAll.isFeatureKey("postLoot"));
 		assertFalse(EnableAll.isFeatureKey("showSidebar"));
 	}

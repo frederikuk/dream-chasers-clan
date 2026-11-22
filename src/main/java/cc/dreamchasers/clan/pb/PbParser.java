@@ -10,6 +10,7 @@ package cc.dreamchasers.clan.pb;
 import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import lombok.Value;
 
 /**
  * Reads the player's own boss and raid times out of game messages.
@@ -79,7 +80,7 @@ public final class PbParser
 			return null;
 		}
 		String text = clean(raw);
-		Kc k = killCount(text);
+		Kc k = killCountOf(text);
 		if (k != null)
 		{
 			if (time != null && tick - timeTick <= PAIR_TICKS)
@@ -109,6 +110,30 @@ public final class PbParser
 		time = t;
 		timeTick = tick;
 		return null;
+	}
+
+	/**
+	 * A kill-count line on its own ("Your Vorkath kill count is: 301."), with or
+	 * without a time line after it: the boss as the game names it and the count.
+	 * Null for any other message, or a count that can't be read. Pure: it keeps
+	 * no state, so it can read the same message {@link #onMessage} does.
+	 */
+	public static KillCount killCount(String raw)
+	{
+		if (raw == null)
+		{
+			return null;
+		}
+		Kc k = killCountOf(clean(raw));
+		return k == null || k.kc == null ? null : new KillCount(k.boss, k.kc);
+	}
+
+	/** One kill-count line: the boss as the game names it, and the count. */
+	@Value
+	public static class KillCount
+	{
+		String boss;
+		int kc;
 	}
 
 	/** Forgets a half-seen kill, e.g. on logout or world hop. */
@@ -146,7 +171,7 @@ public final class PbParser
 		}
 	}
 
-	private static Kc killCount(String text)
+	private static Kc killCountOf(String text)
 	{
 		for (Pattern p : new Pattern[]{KC_FOR, KC_COMPLETED, KC_KILL})
 		{

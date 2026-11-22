@@ -109,6 +109,19 @@ public class DrmApiClientTest
 	}
 
 	@Test
+	public void competitionCarriesTheLiveKcBosses() throws Exception
+	{
+		http.reply(200, "{\"apiVersion\":1,\"status\":\"ongoing\",\"kcBosses\":[\"Vorkath\"],"
+			+ "\"competition\":{\"id\":7,\"metric\":\"vorkath\",\"kcBosses\":[\"Vorkath\"]}}", "public, max-age=300");
+		CompetitionResponse cr = fetch(Endpoint.COMPETITION, false).getValue();
+		assertEquals(java.util.Collections.singletonList("Vorkath"), cr.getKcBosses());
+		assertEquals(java.util.Collections.singletonList("Vorkath"), cr.getCompetition().getKcBosses());
+		api.invalidate(Endpoint.COMPETITION);
+		http.reply(200, FakeHttp.fixture("competition-raid.json"), "public, max-age=300");
+		assertNull("an older site: none", fetch(Endpoint.COMPETITION, false).getValue().getKcBosses());
+	}
+
+	@Test
 	public void competitionNoneHasNullCompetition() throws Exception
 	{
 		http.reply(200, "{\"apiVersion\":1,\"status\":\"none\",\"competition\":null}", "public, max-age=300");

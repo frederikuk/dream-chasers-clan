@@ -24,6 +24,7 @@ public interface DreamChasersClanConfig extends Config
 	String SPLASH_OPTED_IN_KEY = "splashOptedIn";
 	String PBS_KEY = "postPbs";
 	String LOOT_KEY = "postLoot";
+	String LIVE_KC_KEY = "liveCompetitionKc";
 	String RAID_KEY = "shareRaidStats";
 	String TILES_KEY = "tilePacks";
 	String ENABLE_ALL_KEY = "enableEverything";
@@ -80,7 +81,7 @@ public interface DreamChasersClanConfig extends Config
 		name = "Enable everything",
 		description = TIP + "Sign in first (tick Connect to dream-chasers.cc above, or use the player menu at the top right of the Dream Chasers panel); until you're signed in it turns itself straight back off and the panel says why. "
 			+ "Then it turns on every Dream Chasers feature below: Post personal bests, Post collection log, "
-			+ "Clan splash, Clan tile packs, Join DRM Live and Share raid stats. Ticking it also turns Connect back on if you'd turned it off; untick to turn them all off, Connect included. It ticks itself once you have turned every one of them on. "
+			+ "Live competition KC, Clan splash, Clan tile packs, Join DRM Live and Share raid stats. Ticking it also turns Connect back on if you'd turned it off; untick to turn them all off, Connect included. It ticks itself once you have turned every one of them on. "
 			+ "RuneLite only shows the new ticks once you close and reopen these settings. "
 			+ "It never agrees to the DRM Live stream consent or sends your character's model; those stay their own buttons" + TIP_END,
 		warning = "This feature submits your IP address to a 3rd-party server not controlled or verified by RuneLite developers",
@@ -116,7 +117,7 @@ public interface DreamChasersClanConfig extends Config
 			+ "Needs you signed in; Enable everything leaves it alone" + TIP_END,
 		warning = "This feature submits your IP address to a 3rd-party server not controlled or verified by RuneLite developers",
 		section = CONNECT_SECTION,
-		position = 9
+		position = 10
 	)
 	default boolean officerRosterSync()
 	{
@@ -188,12 +189,28 @@ public interface DreamChasersClanConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = LIVE_KC_KEY,
+		name = "Live competition KC",
+		description = TIP + "While a clan competition on a boss or raid is running, send your kill count for that boss to dream-chasers.cc each time the game tells you it, "
+			+ "so the competition standings move as you kill instead of waiting for Wise Old Man (which only sees your hiscores after you log out). "
+			+ "Sends the boss, your kill count, your RSN, a hashed account id and your own account type (normal, ironman and so on); only for the bosses the site says are in a running competition, "
+			+ "your own kills only. Needs you signed in" + TIP_END,
+		warning = "This feature submits your IP address to a 3rd-party server not controlled or verified by RuneLite developers",
+		section = DATA_SECTION,
+		position = 7
+	)
+	default boolean liveCompetitionKc()
+	{
+		return false;
+	}
+
+	@ConfigItem(
 		keyName = RAID_KEY,
 		name = "Share raid stats on DRM Live",
 		description = TIP + "While you're on the clan stream (DRM Live) and inside Chambers of Xeric, Theatre of Blood or Tombs of Amascut, send your own hitpoints, prayer and inventory to dream-chasers.cc, at most every 5 seconds, for the stream overlay. Nothing about other players. Only after you've agreed to the stream consent and joined the stream in the DRM Live section; otherwise nothing is sent" + TIP_END,
 		warning = "This feature submits your IP address to a 3rd-party server not controlled or verified by RuneLite developers",
 		section = LIVE_SECTION,
-		position = 7
+		position = 8
 	)
 	default boolean shareRaidStats()
 	{
@@ -206,7 +223,7 @@ public interface DreamChasersClanConfig extends Config
 		description = TIP + "Show the clan's ground-marker packs from dream-chasers.cc in the panel, each with a Copy button. Import a copied pack with RuneLite's own Ground Markers (right-click the world map orb)" + TIP_END,
 		warning = "This feature submits your IP address to a 3rd-party server not controlled or verified by RuneLite developers",
 		section = PVM_SECTION,
-		position = 8
+		position = 9
 	)
 	default boolean tilePacks()
 	{

@@ -24,4 +24,6 @@ public class Competition
 	private List<Standing> standings;
 	private String url;
 	private String wom;
+	/** As {@link CompetitionResponse#getKcBosses()}, if the site puts it on the competition instead. */
+	private List<String> kcBosses;
 }

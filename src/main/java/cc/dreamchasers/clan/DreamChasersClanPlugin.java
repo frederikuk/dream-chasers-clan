@@ -12,6 +12,7 @@ import cc.dreamchasers.clan.api.DrmApiClient;
 import cc.dreamchasers.clan.api.Endpoint;
 import cc.dreamchasers.clan.api.FeaturedResponse;
 import cc.dreamchasers.clan.api.HallOfFameResponse;
+import cc.dreamchasers.clan.api.KcResponse;
 import cc.dreamchasers.clan.api.LiveActionResponse;
 import cc.dreamchasers.clan.api.LiveJoinResponse;
 import cc.dreamchasers.clan.api.LiveResponse;
@@ -168,6 +169,15 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	private volatile boolean splashImageOk;
 	// Pairs kill-count and time lines; client thread only
 	private final PbParser pbParser = new PbParser();
+	// Live competition KC: the newest count per boss waiting to go
+	private final LiveKc liveKc = new LiveKc();
+	/**
+	 * Game ticks since the last login or hop; the account-type varbit is only
+	 * read once the game has had a tick or two to send it. Client thread.
+	 */
+	private int ticksSinceLogin;
+	/** Ticks after a login before {@link #accountType()} trusts the varbit. */
+	static final int ACCOUNT_TYPE_SETTLE_TICKS = 2;
 	// Sailing's Barracuda Trials, timed from game state; client thread only
 	private final TrialTimer trialTimer = new TrialTimer();
 	// Old PBs from Chat Commands' store, checked on the first tick after login or sign-in
@@ -366,6 +376,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		clanCheckDue = true;
 		ownClan = OwnClan.Reading.UNKNOWN;
 		pbParser.reset();
+		liveKc.reset();
 		forgetPbsSent();
 		clogTracker.reset();
 	}
@@ -391,6 +402,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		else if (state == GameState.LOGGING_IN || state == GameState.LOGIN_SCREEN || state == GameState.HOPPING)
 		{
 			loginPending = true;
+			ticksSinceLogin = 0;
 			if (state == GameState.LOGGING_IN)
 			{
 				return;
@@ -400,6 +412,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 			officer = false;
 			rosterDueTick = -1;
 			pbParser.reset();
+			liveKc.reset();     // maybe another account next; KC is cumulative, so the next kill sends the newest
 			trialTimer.reset();
 			clogTracker.reset();
 			if (state == GameState.LOGIN_SCREEN)
@@ -455,6 +468,15 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 				return;
 			}
 		}
+		if (liveKcOn())
+		{
+			PbParser.KillCount k = PbParser.killCount(event.getMessage());
+			Player me = client.getLocalPlayer();
+			if (k != null && me != null && me.getName() != null)
+			{
+				liveKc(k, me.getName(), accountDigest(), accountType());
+			}
+		}
 		if (!config.connect() || !config.postPbs() || signedInName() == null)
 		{
 			return;
@@ -506,7 +528,8 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		}
 		int session = pbSession;
 		int tokenGen = signInGen;
-		api.postAuthed("/plugin/pbs", Uploads.pb(record, rsn, Clock.systemUTC().instant(), accountDigest()), SubmitResponse.class,
+		JsonObject body = Uploads.withAcct(Uploads.pb(record, rsn, Clock.systemUTC().instant(), accountDigest()), accountType());
+		api.postAuthed("/plugin/pbs", body, SubmitResponse.class,
 			result -> pbAnswered(record, session, tokenGen, result));
 	}
 
@@ -542,6 +565,74 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		}
 	}
 
+	// ---- live competition KC ----
+
+	/** Live competition KC is on, Connect is on and the member is signed in. */
+	boolean liveKcOn()
+	{
+		return config.connect() && config.liveCompetitionKc() && signedInName() != null;
+	}
+
+	/**
+	 * One kill-count line of the player's own. Sent only when the boss is in
+	 * the site's {@code kcBosses} for the running competition, read from the
+	 * cached {@code /competition} (fetched only once that copy is stale; a
+	 * failed fetch hands back the last good copy). {@code rsn}, {@code digest}
+	 * and {@code acct} are read on the client thread before this is called.
+	 */
+	void liveKc(PbParser.KillCount k, String rsn, String digest, Integer acct)
+	{
+		DrmApiClient api = api();
+		if (api == null)
+		{
+			return;
+		}
+		int tokenGen = signInGen;
+		api.fetch(Endpoint.COMPETITION, false, result ->
+		{
+			if (!LiveKc.wanted(LiveKc.bosses(result.getValue()), k.getBoss()))
+			{
+				return;
+			}
+			liveKc.offer(k.getBoss(), k.getKc(), (boss, kc, done) ->
+				api.postAuthed("/plugin/kc", Uploads.kc(boss, kc, rsn, digest, acct), KcResponse.class, answer ->
+				{
+					if (answer.getStatus() == ApiResult.Status.UNAUTHORIZED)
+					{
+						forgetToken(tokenGen);
+					}
+					if (answer.getStatus() != ApiResult.Status.OK)
+					{
+						log.debug("KC for {} not taken: {}", boss, answer.getMessage());
+					}
+					done.accept(answer);
+				}));
+		});
+	}
+
+	/** The site client while the plugin runs; null otherwise. Overridden in tests. */
+	DrmApiClient api()
+	{
+		return api;
+	}
+
+	/**
+	 * The game's account type for the player's own account (varbit
+	 * {@code IRONMAN}: 0 normal, 1 ironman, 2 ultimate, 3 hardcore, 4 group,
+	 * 5 hardcore group, 6 unranked group). Null when logged out, in the first
+	 * ticks after a login (the varbit may not be in yet, and a 0 would read as
+	 * normal), or out of range. Never anyone else's. Client thread.
+	 */
+	Integer accountType()
+	{
+		if (client.getGameState() != GameState.LOGGED_IN || ticksSinceLogin < ACCOUNT_TYPE_SETTLE_TICKS)
+		{
+			return null;
+		}
+		int v = client.getVarbitValue(VarbitID.IRONMAN);
+		return v >= 0 && v <= 6 ? v : null;
+	}
+
 	/** A logout to the login screen, or the plugin stopping: the next account starts with nothing sent. */
 	void forgetPbsSent()
 	{
@@ -562,6 +653,10 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	{
 		// RuneLite allows one handler per event, named after it: the collection
 		// log tick runs here too (a second GameTick handler stops the plugin starting)
+		if (ticksSinceLogin < ACCOUNT_TYPE_SETTLE_TICKS)
+		{
+			ticksSinceLogin++;
+		}
 		clientTicks();
 		verifiedTick();
 		signInTick();     // after clanTick (in clientTicks) has read the own clan record
@@ -852,7 +947,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		{
 			return;
 		}
-		JsonObject body = Uploads.batch(PbBackfill.records(stored), rsn, accountDigest());
+		JsonObject body = Uploads.withAcct(Uploads.batch(PbBackfill.records(stored), rsn, accountDigest()), accountType());
 		int tokenGen = signInGen;
 		api.postAuthed("/plugin/pbs/batch", body, BatchResponse.class, result ->
 		{
@@ -1238,7 +1333,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		Instant at = Clock.systemUTC().instant();
 		for (ClogTracker.Clog c : out.getClogs())
 		{
-			postLoot("clog " + c.getName(), Uploads.clog(c, rsn, at, accountDigest()));
+			postLoot("clog " + c.getName(), Uploads.withAcct(Uploads.clog(c, rsn, at, accountDigest()), accountType()));
 		}
 		long threshold = LootPicker.clanThreshold(clanThreshold);
 		for (ClogTracker.Drop d : out.getDrops())
@@ -1251,7 +1346,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	{
 		if (!items.isEmpty())
 		{
-			postLoot(source, Uploads.drop(source, items, rsn, at, accountDigest()));
+			postLoot(source, Uploads.withAcct(Uploads.drop(source, items, rsn, at, accountDigest()), accountType()));
 		}
 	}
 
@@ -1291,7 +1386,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		{
 			return;
 		}
-		// "Enable everything": on switches the seven features on, off switches them
+		// "Enable everything": on switches the eight features on, off switches them
 		// off; one turned off by hand unticks it. It only flips settings: it never
 		// opens the browser. Not signed in? Ticking Connect (or the player menu) signs in.
 		boolean signedIn = signedInName() != null;

@@ -16,11 +16,12 @@ import java.time.Instant;
 import java.util.List;
 
 /**
- * The JSON bodies of {@code POST /plugin/pbs} and {@code /plugin/pbs/batch}
- * and {@code /plugin/loots}. Each carries {@code digest}, the salted
+ * The JSON bodies of {@code POST /plugin/pbs}, {@code /plugin/pbs/batch},
+ * {@code /plugin/loots} and {@code /plugin/kc}. Each carries {@code digest}, the salted
  * SHA-256 of the account hash ({@link OwnClan#digest(long)}), so the site can
  * check the post comes from the account that verified; it is left out only
- * before login (null). The raw account hash is never sent.
+ * before login (null). The raw account hash is never sent. Each also carries
+ * {@code acct}, the player's own account type, when known ({@link #withAcct}).
  */
 final class Uploads
 {
@@ -121,6 +122,31 @@ final class Uploads
 		body.add("pbs", list);
 		addDigest(body, digest);
 		return body;
+	}
+
+	/** Live competition KC: {rsn, digest?, boss, kc, acct?} */
+	static JsonObject kc(String boss, int kc, String rsn, String digest, Integer acct)
+	{
+		JsonObject o = new JsonObject();
+		o.addProperty("rsn", rsn);
+		addDigest(o, digest);
+		o.addProperty("boss", boss);
+		o.addProperty("kc", kc);
+		return withAcct(o, acct);
+	}
+
+	/**
+	 * Adds {@code acct}, the game's account-type value for the player's own
+	 * account (0 normal, 1 ironman, 2 ultimate, 3 hardcore, 4 group, 5 hardcore
+	 * group, 6 unranked group), to any body; left out when unknown or out of range.
+	 */
+	static JsonObject withAcct(JsonObject o, Integer acct)
+	{
+		if (acct != null && acct >= 0 && acct <= 6)
+		{
+			o.addProperty("acct", acct);
+		}
+		return o;
 	}
 
 	private static void addDigest(JsonObject o, String digest)

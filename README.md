@@ -45,7 +45,7 @@ Sign in first: tick **Connect to dream-chasers.cc**, the first setting (see
 Sign in, below). Once you're signed in, the panel
 offers **Enable everything** (with the IP-address warning next to it), and the
 second setting does the same. It switches on Post personal bests, Post
-collection log, Clan splash, Clan tile packs, Join DRM Live and Share raid
+collection log, Live competition KC, Clan splash, Clan tile packs, Join DRM Live and Share raid
 stats. Before you're signed in it does nothing: the setting unticks itself and
 the panel's status line says why. It
 never agrees to the DRM Live stream consent or sends your character's model;
@@ -84,6 +84,15 @@ changes once you close and reopen them.
   popup or both); the panel tells you if it's off. Your own drops worth the clan's big-drop amount (10M today, never below 1M; the same for
   everyone, set by the site) are posted too, priced with RuneLite's own item
   prices (no extra downloads). PvP kills are never posted. Same IP-address warning.
+- **Live competition KC** (off by default). While a clan competition on a
+  boss or raid is running, each kill-count line the game gives you for that
+  boss ("Your Vorkath kill count is: 301.") sends the boss and the count to
+  dream-chasers.cc, so the standings move as you kill. Wise Old Man stays the
+  confirmed number: the game's hiscores only update when you log out. The site
+  says which bosses count right now (with the competition standings the panel
+  already fetches), so nothing is sent outside a competition. Only the newest
+  count waits if the site is busy, and the next kill sends it; nothing is kept
+  on disk. Your RSN and hashed account id go with it. Same IP-address warning.
 - **Share raid stats on DRM Live** (off by default). While you're on the clan
   stream and inside Chambers of Xeric, Theatre of Blood or Tombs of Amascut,
   the plugin sends your own hitpoints, prayer and inventory to dream-chasers.cc
@@ -152,6 +161,10 @@ someone else taking your name. Your clan rank and join date are not sent.
 With posting turned on, your PBs, old PBs, collection log slots and big drops
 carry the same hashed account id, so the site can tell they come from the
 account that verified.
+They and live competition KC also carry your own account type as the game
+gives it (normal, ironman, ultimate, hardcore or a group ironman type), so the
+clan's pages show the right one before Wise Old Man has caught up. Never
+anyone else's.
 
 ## Officer roster sync
 
