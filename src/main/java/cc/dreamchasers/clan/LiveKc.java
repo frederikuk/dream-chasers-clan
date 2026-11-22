@@ -31,6 +31,12 @@ import java.util.function.Consumer;
  * that boss sends the newest: nothing is retried on a timer and nothing is
  * kept on disk.
  *
+ * <p>A kill whose {@code /competition} check has no answer at all (no copy
+ * yet, and the fetch failed or another one is out) is kept unchecked, the
+ * highest count per boss, and offered once a real answer lists the boss: the
+ * next kill's check, or the panel's own fetch. Only a real answer that leaves
+ * the boss out drops it.
+ *
  * <p>Budget: at most one POST per kill of a boss in a running clan
  * competition (the site caps the route at 60 posts per 10 minutes per member),
  * plus the {@code /competition} GET the panel already makes, served from the
@@ -49,7 +55,21 @@ final class LiveKc
 
 	private final Map<String, Integer> pending = new HashMap<>();
 	private final Set<String> inFlight = new HashSet<>();
+	/** Kills seen before any {@code /competition} answer could say whether they are wanted. */
+	private final Map<String, Unchecked> unchecked = new HashMap<>();
 	private int session;
+
+	private static final class Unchecked
+	{
+		final int kc;
+		final Poster poster;
+
+		Unchecked(int kc, Poster poster)
+		{
+			this.kc = kc;
+			this.poster = poster;
+		}
+	}
 
 	/** The bosses the site wants counts for, from either place it may list them; never null. */
 	static List<String> bosses(CompetitionResponse r)
@@ -86,6 +106,77 @@ final class LiveKc
 			}
 		}
 		return false;
+	}
+
+	/** The current session, read when a kill is seen; {@link #kill} ignores a kill from an earlier one. */
+	synchronized int session()
+	{
+		return session;
+	}
+
+	/**
+	 * One kill-count line and the {@code /competition} copy its check got
+	 * (null when there was none at all). Offers it when the boss is wanted,
+	 * keeps it unchecked when there was no copy, and first settles every kill
+	 * kept unchecked.
+	 */
+	void kill(int s, CompetitionResponse comp, String boss, int kc, Poster poster)
+	{
+		if (comp == null)
+		{
+			synchronized (this)
+			{
+				if (s == session)
+				{
+					Unchecked old = unchecked.get(boss);
+					unchecked.put(boss, new Unchecked(old == null ? kc : Math.max(old.kc, kc), poster));
+				}
+			}
+			return;
+		}
+		synchronized (this)
+		{
+			if (s != session)
+			{
+				return;     // a logout since: that account's kill isn't sent
+			}
+		}
+		List<String> bosses = bosses(comp);
+		checked(bosses);
+		if (wanted(bosses, boss))
+		{
+			offer(boss, kc, poster);
+		}
+	}
+
+	/** A real {@code /competition} answer (the panel's, say): settles every kill kept unchecked. */
+	void checked(CompetitionResponse comp)
+	{
+		if (comp != null)
+		{
+			checked(bosses(comp));
+		}
+	}
+
+	private void checked(List<String> bosses)
+	{
+		Map<String, Unchecked> held;
+		synchronized (this)
+		{
+			if (unchecked.isEmpty())
+			{
+				return;
+			}
+			held = new HashMap<>(unchecked);
+			unchecked.clear();
+		}
+		for (Map.Entry<String, Unchecked> e : held.entrySet())
+		{
+			if (wanted(bosses, e.getKey()))
+			{
+				offer(e.getKey(), e.getValue().kc, e.getValue().poster);
+			}
+		}
 	}
 
 	/** One kill-count line for a wanted boss: sends it now, or keeps it as the newest waiting count. */
@@ -150,12 +241,20 @@ final class LiveKc
 		session++;
 		pending.clear();
 		inFlight.clear();
+		unchecked.clear();
 	}
 
 	/** The count waiting for a boss; null when none. For tests. */
 	synchronized Integer waiting(String boss)
 	{
 		return pending.get(boss);
+	}
+
+	/** The count kept unchecked for a boss; null when none. For tests. */
+	synchronized Integer unchecked(String boss)
+	{
+		Unchecked u = unchecked.get(boss);
+		return u == null ? null : u.kc;
 	}
 
 	/** Whether a count for the boss is out. For tests. */

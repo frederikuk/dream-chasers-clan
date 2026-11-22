@@ -150,6 +150,72 @@ public class LiveKcTest
 		assertFalse(LiveKc.wanted(b, null));
 	}
 
+	private static CompetitionResponse listing(String... bosses)
+	{
+		CompetitionResponse r = new CompetitionResponse();
+		r.setKcBosses(Arrays.asList(bosses));
+		return r;
+	}
+
+	@Test
+	public void aKillWithNoCompetitionCopyIsKeptNotDropped()
+	{
+		// the copy is stale and its refresh is out: before the first good answer the check gets nothing
+		LiveKc live = new LiveKc();
+		Held h = new Held();
+		int s = live.session();
+		live.kill(s, null, "Vorkath", 301, h);
+		live.kill(s, null, "Vorkath", 302, h);
+		live.kill(s, null, "Vorkath", 300, h);
+		assertTrue(h.sent.isEmpty());
+		assertEquals("the highest count is kept", Integer.valueOf(302), live.unchecked("Vorkath"));
+		live.checked(listing("Vorkath"));
+		assertEquals(Collections.singletonList("Vorkath=302"), h.sent);
+		assertNull(live.unchecked("Vorkath"));
+	}
+
+	@Test
+	public void theNextKillsAnswerSendsTheKeptCountWithIt()
+	{
+		LiveKc live = new LiveKc();
+		Held h = new Held();
+		int s = live.session();
+		live.kill(s, null, "Vorkath", 302, h);
+		live.kill(s, null, "Zulrah", 40, h);
+		live.kill(s, listing("Vorkath"), "Vorkath", 301, h);     // the first kill's older answer comes in last
+		assertEquals("the kept, newer count goes; Zulrah isn't wanted", Collections.singletonList("Vorkath=302"), h.sent);
+		assertNull("dropped once a real answer leaves it out", live.unchecked("Zulrah"));
+	}
+
+	@Test
+	public void onlyARealAnswerSettlesAKeptCount()
+	{
+		LiveKc live = new LiveKc();
+		Held h = new Held();
+		int s = live.session();
+		live.kill(s, null, "Vorkath", 302, h);
+		live.checked(null);
+		assertEquals(Integer.valueOf(302), live.unchecked("Vorkath"));
+		live.checked(listing());
+		assertNull("no competition: dropped", live.unchecked("Vorkath"));
+		assertTrue(h.sent.isEmpty());
+	}
+
+	@Test
+	public void aLogoutDropsKeptCountsAndLateChecks()
+	{
+		LiveKc live = new LiveKc();
+		Held h = new Held();
+		int s = live.session();
+		live.kill(s, null, "Vorkath", 302, h);
+		live.reset();
+		assertNull(live.unchecked("Vorkath"));
+		live.kill(s, null, "Vorkath", 303, h);
+		live.kill(s, listing("Vorkath"), "Vorkath", 304, h);
+		assertNull("a check from before the logout keeps nothing", live.unchecked("Vorkath"));
+		assertTrue("and sends nothing", h.sent.isEmpty());
+	}
+
 	// ---- the plugin, against a fake site ----
 
 	private static final String COMP = "{\"apiVersion\":1,\"status\":\"ongoing\",\"competition\":{\"id\":7,\"metric\":\"vorkath\"},"
@@ -202,6 +268,29 @@ public class LiveKcTest
 		assertEquals("Bearer drm_pt_x", post.request.header("Authorization"));
 		assertEquals("{\"rsn\":\"Lomaru\",\"digest\":\"dig\",\"boss\":\"Vorkath\",\"kc\":301,\"acct\":1}", post.body);
 		assertTrue(http.requests.get(2).body.contains("\"kc\":302"));
+	}
+
+	@Test
+	public void aKillBeforeTheFirstCompetitionCopyIsSentOnceOneComesIn() throws Exception
+	{
+		FakeHttp http = new FakeHttp();
+		FakeHttp.MutableClock clock = new FakeHttp.MutableClock(Instant.parse("2026-11-22T12:00:00Z"));
+		DrmApiClient api = new DrmApiClient(http.client, new Gson(), "https://dream-chasers.cc/api/v1", "UA", () -> "drm_pt_x",
+			clock);
+		http.reply(503, "{}", null);     // the first check fails, and there is no copy yet
+		http.reply(200, COMP, "public, max-age=300");
+		http.reply(200, "{\"ok\":true,\"stored\":true}", null);
+		DreamChasersClanPlugin p = plugin(api);
+
+		p.liveKc(new PbParser.KillCount("Vorkath", 301), "Lomaru", "dig", 1);
+		waitFor(http, 1);
+		assertEquals("nothing posted on no answer", 1, http.requests.size());
+		clock.advanceSeconds(3600);     // past the back-off
+		p.liveKc(new PbParser.KillCount("Zulrah", 40), "Lomaru", "dig", 1);     // a later kill's check lists Vorkath
+		waitFor(http, 3);
+		assertEquals(3, http.requests.size());
+		assertEquals("{\"rsn\":\"Lomaru\",\"digest\":\"dig\",\"boss\":\"Vorkath\",\"kc\":301,\"acct\":1}",
+			http.requests.get(2).body);
 	}
 
 	@Test

@@ -588,26 +588,23 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 			return;
 		}
 		int tokenGen = signInGen;
-		api.fetch(Endpoint.COMPETITION, false, result ->
-		{
-			if (!LiveKc.wanted(LiveKc.bosses(result.getValue()), k.getBoss()))
+		int session = liveKc.session();
+		LiveKc.Poster poster = (boss, kc, done) ->
+			api.postAuthed("/plugin/kc", Uploads.kc(boss, kc, rsn, digest, acct), KcResponse.class, answer ->
 			{
-				return;
-			}
-			liveKc.offer(k.getBoss(), k.getKc(), (boss, kc, done) ->
-				api.postAuthed("/plugin/kc", Uploads.kc(boss, kc, rsn, digest, acct), KcResponse.class, answer ->
+				if (answer.getStatus() == ApiResult.Status.UNAUTHORIZED)
 				{
-					if (answer.getStatus() == ApiResult.Status.UNAUTHORIZED)
-					{
-						forgetToken(tokenGen);
-					}
-					if (answer.getStatus() != ApiResult.Status.OK)
-					{
-						log.debug("KC for {} not taken: {}", boss, answer.getMessage());
-					}
-					done.accept(answer);
-				}));
-		});
+					forgetToken(tokenGen);
+				}
+				if (answer.getStatus() != ApiResult.Status.OK)
+				{
+					log.debug("KC for {} not taken: {}", boss, answer.getMessage());
+				}
+				done.accept(answer);
+			});
+		// no copy at all (none yet, and the fetch failed or another is out): kept unchecked, not dropped
+		api.fetch(Endpoint.COMPETITION, false, result ->
+			liveKc.kill(session, result.getValue(), k.getBoss(), k.getKc(), poster));
 	}
 
 	/** The site client while the plugin runs; null otherwise. Overridden in tests. */
@@ -625,12 +622,18 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	 */
 	Integer accountType()
 	{
-		if (client.getGameState() != GameState.LOGGED_IN || ticksSinceLogin < ACCOUNT_TYPE_SETTLE_TICKS)
+		if (!loggedIn() || ticksSinceLogin < ACCOUNT_TYPE_SETTLE_TICKS)
 		{
 			return null;
 		}
-		int v = client.getVarbitValue(VarbitID.IRONMAN);
+		int v = accountTypeVarbit();
 		return v >= 0 && v <= 6 ? v : null;
+	}
+
+	/** The own account's {@code IRONMAN} varbit, as the game has it now. Overridden in tests. Client thread. */
+	int accountTypeVarbit()
+	{
+		return client.getVarbitValue(VarbitID.IRONMAN);
 	}
 
 	/** A logout to the login screen, or the plugin stopping: the next account starts with nothing sent. */
@@ -912,21 +915,44 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	 * network failure, a 5xx or a sign-in problem leaves the day open, and then
 	 * the batch waits for the next real login or sign-in (and the client's back-off).
 	 */
-	private void backfillTick()
+	void backfillTick()
 	{
-		if (!backfillDue || !config.connect() || !config.postPbs() || signedInName() == null)
+		if (!backfillDue || !backfillOn())
 		{
 			return;
 		}
+		if (ticksSinceLogin < ACCOUNT_TYPE_SETTLE_TICKS)
+		{
+			return;     // the account-type varbit isn't in yet (the batch would go without acct): try next tick
+		}
+		if (sendBackfill(accountType()))
+		{
+			backfillDue = false;
+		}
+	}
+
+	/** Connect and Post PBs are on and the member is signed in. Overridden in tests. */
+	boolean backfillOn()
+	{
+		return config.connect() && config.postPbs() && signedInName() != null;
+	}
+
+	/**
+	 * Sends the old-PB batch if it is due today, with the player's own account
+	 * type. False when the game or the site client isn't ready yet (try again
+	 * next tick); true once it is settled for this login, sent or not.
+	 * Overridden in tests. Client thread.
+	 */
+	boolean sendBackfill(Integer acct)
+	{
 		Player me = client.getLocalPlayer();
 		String rsn = me == null ? null : me.getName();
 		String profile = configManager.getRSProfileKey();
 		DrmApiClient api = this.api;
 		if (rsn == null || profile == null || api == null)
 		{
-			return;     // try again next tick
+			return false;     // try again next tick
 		}
-		backfillDue = false;
 		Map<String, Double> stored = new java.util.HashMap<>();
 		for (String listed : configManager.getRSProfileConfigurationKeys(PbBackfill.GROUP, profile, ""))
 		{
@@ -939,15 +965,15 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		}
 		if (stored.isEmpty())
 		{
-			return;
+			return true;
 		}
 		String today = java.time.LocalDate.now(java.time.ZoneOffset.UTC).toString();
 		String hash = PbBackfill.hash(stored);
 		if (!PbBackfill.due(config.pbBackfillSent(), today, rsn, hash))
 		{
-			return;
+			return true;
 		}
-		JsonObject body = Uploads.withAcct(Uploads.batch(PbBackfill.records(stored), rsn, accountDigest()), accountType());
+		JsonObject body = Uploads.withAcct(Uploads.batch(PbBackfill.records(stored), rsn, accountDigest()), acct);
 		int tokenGen = signInGen;
 		api.postAuthed("/plugin/pbs/batch", body, BatchResponse.class, result ->
 		{
@@ -966,6 +992,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 					PbBackfill.stamp(today, rsn, hash));
 			}
 		});
+		return true;
 	}
 
 	/** The "Collection log" popup, for members who have it instead of (or with) the chat line. */
@@ -1497,7 +1524,14 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		{
 			return;
 		}
-		api.fetch(Endpoint.COMPETITION, force, panel::showCompetition);
+		api.fetch(Endpoint.COMPETITION, force, result ->
+		{
+			panel.showCompetition(result);
+			if (liveKcOn())
+			{
+				liveKc.checked(result.getValue());     // a kill kept unchecked goes once this lists its boss
+			}
+		});
 		api.fetch(Endpoint.HALL_OF_FAME, force, result ->
 		{
 			onHallOfFame(result);

@@ -32,6 +32,29 @@ public class KillCountTest
 	}
 
 	@Test
+	public void countsWithNoPbAreReadUnderTheSitesNames()
+	{
+		// WOM metrics barrows_chests, lunar_chests and wintertodt; the site lists them by these names
+		reads("Your Barrows chest count is: <col=ff0000>1,204</col>.", "Barrows Chests", 1204);
+		reads("Your Lunar Chest count is: <col=ff0000>57</col>.", "Lunar Chests", 57);
+		reads("Your lunar chest count is: 58.", "Lunar Chests", 58);
+		reads("Your subdued Wintertodt count is: <col=ff0000>310</col>.", "Wintertodt", 310);
+		assertNull("anchored to the player's own line",
+			PbParser.killCount("Lomaru: Your Barrows chest count is: 5."));
+		assertNull(PbParser.killCount("Your Barrows chest count is: 99999999999."));
+	}
+
+	@Test
+	public void countsWithNoPbNeverPairWithATime()
+	{
+		PbParser p = new PbParser();
+		assertNull(p.onMessage("Your subdued Wintertodt count is: <col=ff0000>310</col>.", 10));
+		assertNull(p.onMessage("Fight duration: <col=ff0000>3:02</col> (new personal best).", 10));
+		assertNull(p.onMessage("Your Barrows chest count is: <col=ff0000>100</col>.", 20));
+		assertNull(p.onMessage("Fight duration: <col=ff0000>1:10</col> (new personal best).", 20));
+	}
+
+	@Test
 	public void otherLinesAreNotCounts()
 	{
 		assertNull(PbParser.killCount(null));

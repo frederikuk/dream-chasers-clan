@@ -46,6 +46,14 @@ public final class PbParser
 	private static final Pattern KC_COMPLETED = Pattern.compile("^Your completed (?<boss>.+?) count is: ?(?<kc>[\\d,]+)");
 	private static final Pattern KC_KILL = Pattern.compile("^Your (?<boss>.+?) (?:kill|completion) count is: ?(?<kc>[\\d,]+)");
 
+	/**
+	 * Counts with no PB of their own, for live competition KC only (never
+	 * paired with a time line): "Your Barrows chest count is: 100", "Your
+	 * Lunar Chest count is: 12", "Your subdued Wintertodt count is: 10".
+	 */
+	private static final Pattern KC_ONLY = Pattern.compile(
+		"^Your (?<boss>Barrows chest|Lunar chest|subdued Wintertodt) count is: ?(?<kc>[\\d,]+)", Pattern.CASE_INSENSITIVE);
+
 	private static final Pattern TAG = Pattern.compile("<[^>]*>");
 	private static final Pattern COLOUR_WORD = Pattern.compile("@[a-z_]+@");
 
@@ -124,8 +132,42 @@ public final class PbParser
 		{
 			return null;
 		}
-		Kc k = killCountOf(clean(raw));
+		String text = clean(raw);
+		Kc k = killCountOf(text);
+		if (k == null)
+		{
+			k = countOnly(text);
+		}
 		return k == null || k.kc == null ? null : new KillCount(k.boss, k.kc);
+	}
+
+	/**
+	 * A {@link #KC_ONLY} line, the boss named as the site lists it (the WOM
+	 * metric's own name: Barrows Chests, Lunar Chests, Wintertodt); null for
+	 * any other line.
+	 */
+	private static Kc countOnly(String text)
+	{
+		Matcher m = KC_ONLY.matcher(text);
+		if (!m.find())
+		{
+			return null;
+		}
+		String b = m.group("boss").toLowerCase(Locale.ROOT);
+		String boss = b.startsWith("barrows") ? "Barrows Chests" : b.startsWith("lunar") ? "Lunar Chests" : "Wintertodt";
+		return new Kc(boss, count(m.group("kc")));
+	}
+
+	private static Integer count(String digits)
+	{
+		try
+		{
+			return Integer.parseInt(digits.replace(",", ""));
+		}
+		catch (NumberFormatException e)
+		{
+			return null;
+		}
 	}
 
 	/** One kill-count line: the boss as the game names it, and the count. */
