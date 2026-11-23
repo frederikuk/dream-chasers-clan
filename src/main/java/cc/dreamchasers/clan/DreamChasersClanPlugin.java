@@ -16,6 +16,7 @@ import cc.dreamchasers.clan.api.KcResponse;
 import cc.dreamchasers.clan.api.LiveActionResponse;
 import cc.dreamchasers.clan.api.LiveJoinResponse;
 import cc.dreamchasers.clan.api.LiveResponse;
+import cc.dreamchasers.clan.api.LogoutResponse;
 import cc.dreamchasers.clan.api.MeResponse;
 import cc.dreamchasers.clan.api.ModelStatusResponse;
 import cc.dreamchasers.clan.api.RaidResponse;
@@ -171,6 +172,8 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	private final PbParser pbParser = new PbParser();
 	// Live competition KC: the newest count per boss waiting to go
 	private final LiveKc liveKc = new LiveKc();
+	/** Who is logged in, for the one logout notice; null once sent or when nobody is. Client thread. */
+	private LiveKc.Account liveAccount;
 	/**
 	 * Game ticks since the last login or hop; the account-type varbit is only
 	 * read once the game has had a tick or two to send it. Client thread.
@@ -377,6 +380,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		ownClan = OwnClan.Reading.UNKNOWN;
 		pbParser.reset();
 		liveKc.reset();
+		liveAccount = null;     // stopping the plugin isn't a logout: nothing is sent
 		forgetPbsSent();
 		clogTracker.reset();
 	}
@@ -407,6 +411,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 			{
 				return;
 			}
+			liveLogout();     // a real logout or a hop: hiscores move now, so the site may ask Wise Old Man
 			setOwnClan(OwnClan.Reading.LOGGED_OUT);
 			clanCheckDue = true;
 			officer = false;
@@ -607,6 +612,77 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 			liveKc.kill(session, result.getValue(), k.getBoss(), k.getKc(), poster));
 	}
 
+	/**
+	 * Notes who is logged in, once the account-type varbit is trusted, so a
+	 * logout can still say who it was. Only while Live competition KC is on.
+	 * Client thread.
+	 */
+	void liveAccountTick()
+	{
+		if (!liveKcOn() || !loggedIn() || ticksSinceLogin < ACCOUNT_TYPE_SETTLE_TICKS)
+		{
+			return;
+		}
+		LiveKc.Account now = liveAccountNow();
+		LiveKc.Account was = liveAccount;
+		if (now != null && (was == null || !was.same(now.rsn, now.digest, now.acct)))
+		{
+			liveAccount = now;
+		}
+	}
+
+	/** The logged-in player's own name, hashed account id and account type; null without a name. Overridden in tests. */
+	LiveKc.Account liveAccountNow()
+	{
+		String name = localName();
+		return name == null ? null : new LiveKc.Account(name, accountDigest(), accountType());
+	}
+
+	/**
+	 * A real logout (LOGIN_SCREEN) or a world hop: one {@code POST
+	 * /plugin/logout} for the account that was logged in, when Live
+	 * competition KC is on, the member is signed in and the cached
+	 * {@code /competition} copy lists any boss. The game's hiscores move on
+	 * logout, so the site can ask Wise Old Man for them (it does so only for a
+	 * participant, at most once per member per 10 minutes). Sent once: the
+	 * account is forgotten here, so a failed login back to LOGIN_SCREEN sends
+	 * nothing, and a failed send is never retried. Client thread.
+	 */
+	void liveLogout()
+	{
+		LiveKc.Account who = liveAccount;
+		liveAccount = null;
+		if (who == null || !liveKcOn())
+		{
+			return;
+		}
+		DrmApiClient api = api();
+		if (api == null)
+		{
+			return;
+		}
+		int tokenGen = signInGen;
+		// cache-first: the copy the panel and the kills already use; a GET only when it is stale
+		api.fetch(Endpoint.COMPETITION, false, result ->
+		{
+			if (!LiveKc.running(result.getValue()))
+			{
+				return;     // no clan competition running: nothing to update
+			}
+			api.postAuthed("/plugin/logout", Uploads.logout(who.rsn, who.digest, who.acct), LogoutResponse.class, answer ->
+			{
+				if (answer.getStatus() == ApiResult.Status.UNAUTHORIZED)
+				{
+					forgetToken(tokenGen);
+				}
+				if (answer.getStatus() != ApiResult.Status.OK)
+				{
+					log.debug("Logout notice not taken: {}", answer.getMessage());
+				}
+			});
+		});
+	}
+
 	/** The site client while the plugin runs; null otherwise. Overridden in tests. */
 	DrmApiClient api()
 	{
@@ -674,6 +750,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		trialTick();
 		backfillTick();
 		rosterTick();
+		liveAccountTick();
 	}
 
 	/**

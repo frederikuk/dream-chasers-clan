@@ -43,10 +43,45 @@ import java.util.function.Consumer;
  * client's cache (its max-age, at least 60 s): at most one GET a minute while
  * killing, usually one per 5 minutes, and none while not killing.
  *
+ * <p>A real logout or a world hop sends one {@code POST /plugin/logout}
+ * (when the competition copy lists any boss), so the site can ask Wise Old
+ * Man for the hiscores the logout just moved: see {@link Account}.
+ *
  * <p>Thread safe: kills come in on the client thread, answers on OkHttp's.
  */
 final class LiveKc
 {
+	/**
+	 * Who was logged in, read on the client thread while the game still has
+	 * the player: by the time it says LOGIN_SCREEN or HOPPING the name may be
+	 * gone. Kept until that logout or hop sends it, once.
+	 */
+	static final class Account
+	{
+		final String rsn;
+		final String digest;
+		final Integer acct;
+
+		Account(String rsn, String digest, Integer acct)
+		{
+			this.rsn = rsn;
+			this.digest = digest;
+			this.acct = acct;
+		}
+
+		boolean same(String rsn, String digest, Integer acct)
+		{
+			return java.util.Objects.equals(this.rsn, rsn) && java.util.Objects.equals(this.digest, digest)
+				&& java.util.Objects.equals(this.acct, acct);
+		}
+	}
+
+	/** Whether a {@code /competition} copy lists any boss: a clan competition the plugin sends for is running. */
+	static boolean running(CompetitionResponse r)
+	{
+		return !bosses(r).isEmpty();
+	}
+
 	/** Sends one count; {@code done} hears the site's answer. */
 	interface Poster
 	{

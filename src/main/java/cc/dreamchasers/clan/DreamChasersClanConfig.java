@@ -194,7 +194,7 @@ public interface DreamChasersClanConfig extends Config
 		description = TIP + "While a clan competition on a boss or raid is running, send your kill count for that boss to dream-chasers.cc each time the game tells you it, "
 			+ "so the competition standings move as you kill instead of waiting for Wise Old Man (which only sees your hiscores after you log out). "
 			+ "Sends the boss, your kill count, your RSN, a hashed account id and your own account type (normal, ironman and so on); only for the bosses the site says are in a running competition, "
-			+ "your own kills only. Needs you signed in" + TIP_END,
+			+ "your own kills only. When you log out or hop worlds during one, it also tells the site once (your RSN, hashed account id and account type) so the site can ask Wise Old Man to update you straight away. Needs you signed in" + TIP_END,
 		warning = "This feature submits your IP address to a 3rd-party server not controlled or verified by RuneLite developers",
 		section = DATA_SECTION,
 		position = 7

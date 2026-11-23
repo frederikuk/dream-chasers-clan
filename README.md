@@ -92,7 +92,10 @@ changes once you close and reopen them.
   says which bosses count right now (with the competition standings the panel
   already fetches), so nothing is sent outside a competition. Only the newest
   count waits if the site is busy, and the next kill sends it; nothing is kept
-  on disk. Your RSN and hashed account id go with it. Same IP-address warning.
+  on disk. Your RSN and hashed account id go with it. When you log out or hop
+  worlds while a competition is running, it also tells the site once, so the
+  site can ask Wise Old Man to update you straight away instead of waiting for
+  its next check. Same IP-address warning.
 - **Share raid stats on DRM Live** (off by default). While you're on the clan
   stream and inside Chambers of Xeric, Theatre of Blood or Tombs of Amascut,
   the plugin sends your own hitpoints, prayer and inventory to dream-chasers.cc

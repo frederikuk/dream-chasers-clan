@@ -135,6 +135,15 @@ final class Uploads
 		return withAcct(o, acct);
 	}
 
+	/** {rsn, digest?, acct?}: a logout or hop, so the site can ask Wise Old Man for the new hiscores. */
+	static JsonObject logout(String rsn, String digest, Integer acct)
+	{
+		JsonObject o = new JsonObject();
+		o.addProperty("rsn", rsn);
+		addDigest(o, digest);
+		return withAcct(o, acct);
+	}
+
 	/**
 	 * Adds {@code acct}, the game's account-type value for the player's own
 	 * account (0 normal, 1 ironman, 2 ultimate, 3 hardcore, 4 group, 5 hardcore
