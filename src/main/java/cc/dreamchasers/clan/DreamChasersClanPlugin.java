@@ -117,7 +117,7 @@ import okhttp3.OkHttpClient;
 )
 public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.Listener
 {
-	static final String VERSION = "0.5.5";
+	static final String VERSION = "0.5.7";
 	/** RuneLite's HTTP client puts its own "RuneLite/x.y.z" in front of this. */
 	static final String USER_AGENT = "DreamChasersClanPlugin/" + VERSION
 		+ " (+https://dream-chasers.cc; Discord: frederikuk)";
