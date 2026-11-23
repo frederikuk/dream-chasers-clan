@@ -29,4 +29,16 @@ public class CompetitionResponse
 	 * before 23 Nov 2026, which only says so through {@link #kcBosses}.
 	 */
 	private Boolean jitLogout;
+	/**
+	 * The running clan competition's skill, as Wise Old Man names the metric
+	 * ("attack", "runecrafting", "sailing"), that Live competition XP sends
+	 * the player's XP for; null when no skill competition is running (and on a
+	 * site from before D-231123-2).
+	 */
+	private String xpSkill;
+	/**
+	 * How often, in seconds, Live competition XP may send; the plugin never
+	 * goes below 120 whatever this says, and uses 300 when it is absent.
+	 */
+	private Integer xpEvery;
 }

@@ -24,8 +24,10 @@ import cc.dreamchasers.clan.api.RaidResponse;
 import cc.dreamchasers.clan.api.RosterResponse;
 import cc.dreamchasers.clan.api.BatchResponse;
 import cc.dreamchasers.clan.api.SubmitResponse;
+import cc.dreamchasers.clan.api.XpResponse;
 import cc.dreamchasers.clan.loot.ClogTracker;
 import cc.dreamchasers.clan.loot.LootPicker;
+import cc.dreamchasers.clan.loot.UnlockWatch;
 import cc.dreamchasers.clan.pb.PbBackfill;
 import cc.dreamchasers.clan.pb.PbParser;
 import cc.dreamchasers.clan.pb.PbRecord;
@@ -73,6 +75,9 @@ import net.runelite.api.clan.ClanID;
 import net.runelite.api.clan.ClanSettings;
 import net.runelite.api.events.ClanChannelChanged;
 import net.runelite.api.events.GameTick;
+import net.runelite.api.events.ItemContainerChanged;
+import net.runelite.api.events.StatChanged;
+import net.runelite.api.widgets.Widget;
 import net.runelite.api.events.ScriptPreFired;
 import net.runelite.api.events.WidgetClosed;
 import net.runelite.api.gameval.InterfaceID;
@@ -176,6 +181,10 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	private final PbParser pbParser = new PbParser();
 	// Live competition KC: the newest count per boss waiting to go
 	private final LiveKc liveKc = new LiveKc();
+	// Live competition XP: the newest XP per skill and the slow send timer
+	private final LiveXp liveXp = new LiveXp();
+	// Blorva and Radiant oathplate: the items arriving in the inventory; client thread only
+	private final UnlockWatch unlockWatch = new UnlockWatch();
 	/** Who is logged in, for the one logout notice; null once sent or when nobody is. Client thread. */
 	private LiveKc.Account liveAccount;
 	/** A logout notice waiting for a {@code /competition} fetch that was already out; settled once. */
@@ -390,6 +399,8 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		ownClan = OwnClan.Reading.UNKNOWN;
 		pbParser.reset();
 		liveKc.reset();
+		liveXp.reset();
+		unlockWatch.reset();
 		liveAccount = null;     // stopping the plugin isn't a logout: nothing is sent
 		heldLogout.set(null);
 		forgetPbsSent();
@@ -429,6 +440,8 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 			rosterDueTick = -1;
 			pbParser.reset();
 			liveKc.reset();     // maybe another account next; KC is cumulative, so the next kill sends the newest
+			liveXp.reset();     // the same for XP: the next session starts from the game's login values
+			unlockWatch.reset();     // the next inventory load is a starting point, not an arrival
 			trialTimer.reset();
 			clogTracker.reset();
 			if (state == GameState.LOGIN_SCREEN)
@@ -622,6 +635,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		api.fetch(Endpoint.COMPETITION, false, result ->
 		{
 			liveKc.kill(session, result.getValue(), k.getBoss(), k.getKc(), poster);
+			liveXp.heard(result.getValue());
 			competitionLanded(result);
 		});
 	}
@@ -659,6 +673,89 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		return name == null ? null : new LiveKc.Account(name, accountDigest(), accountType());
 	}
 
+	// ---- live competition XP ----
+
+	/**
+	 * The player's own XP (StatChanged is only ever the local player's), noted
+	 * for Live competition XP while Live competition KC is on, on a main-game
+	 * world. The burst the game sends at login is each skill's starting point.
+	 * Sailing comes in like any other skill. The overall total has no
+	 * StatChanged of its own: {@link #liveXpTick} reads it.
+	 */
+	@Subscribe
+	public void onStatChanged(StatChanged event)
+	{
+		if (event.getSkill() == null || !liveKcOn() || !mainGameWorld())
+		{
+			return;
+		}
+		liveXp.stat(LiveXp.metricOf(event.getSkill()), event.getXp());
+	}
+
+	/** The game's overall XP. Overridden in tests. Client thread. */
+	long overallXp()
+	{
+		return client.getOverallExperience();
+	}
+
+	/**
+	 * Each game tick: when {@link LiveXp#due} says a send may go (XP moved, the
+	 * interval up, no cap), reads the cached {@code /competition} for its
+	 * {@code xpSkill} and sends the newest XP in it to {@code POST /plugin/xp},
+	 * unless the site already has that value. Own account, main-game worlds,
+	 * signed in with Live competition KC on. Client thread.
+	 */
+	void liveXpTick()
+	{
+		if (!liveKcOn() || !loggedIn() || ticksSinceLogin < ACCOUNT_TYPE_SETTLE_TICKS || !mainGameWorld())
+		{
+			return;
+		}
+		// the total, once the login burst is in (its first value here is the starting point)
+		liveXp.stat(LiveXp.OVERALL, overallXp());
+		DrmApiClient api = api();
+		if (api == null || !liveXp.due(liveNow()))
+		{
+			return;
+		}
+		int s = liveXp.session();
+		LiveKc.Account who = liveAccountNow();
+		if (who == null)
+		{
+			liveXp.settle(s);
+			return;
+		}
+		int tokenGen = signInGen;
+		// cache-first: the copy the panel, kills and logouts already use
+		api.fetch(Endpoint.COMPETITION, false, result ->
+		{
+			LiveXp.Send send = liveXp.pick(s, result.getValue());
+			competitionLanded(result);
+			if (send == null)
+			{
+				return;
+			}
+			api.postAuthed("/plugin/xp", Uploads.xp(send.skill, send.xp, who.rsn, who.digest, who.acct), XpResponse.class, answer ->
+			{
+				if (answer.getStatus() == ApiResult.Status.UNAUTHORIZED)
+				{
+					forgetToken(tokenGen);
+				}
+				if (answer.getStatus() != ApiResult.Status.OK)
+				{
+					log.debug("XP for {} not taken: {}", send.skill, answer.getMessage());
+				}
+				liveXp.answered(s, send, answer, liveNow());
+			});
+		});
+	}
+
+	/** The XP timer, for tests. */
+	LiveXp liveXp()
+	{
+		return liveXp;
+	}
+
 	/**
 	 * A real logout (LOGIN_SCREEN) or a world hop: one {@code POST
 	 * /plugin/logout} for the account that was logged in, when Live
@@ -683,6 +780,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		{
 			return;
 		}
+		Map<String, Long> xp = liveXp.snapshot();     // read now: the hop or logout resets it next
 		DrmApiClient api = api();
 		if (api == null)
 		{
@@ -699,10 +797,11 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 			if (noAnswerYet(result))
 			{
 				// no copy yet and another fetch is out: its answer settles this, once
-				heldLogout.set(new HeldNotice(who, tokenGen));
+				heldLogout.set(new HeldNotice(who, tokenGen, xp));
 				return;
 			}
-			logoutNotice(api, who, tokenGen, result.getValue());
+			liveXp.heard(result.getValue());
+			logoutNotice(api, who, tokenGen, xp, result.getValue());
 			competitionLanded(result);
 		});
 	}
@@ -716,11 +815,13 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	{
 		final LiveKc.Account who;
 		final int tokenGen;
+		final Map<String, Long> xp;
 
-		HeldNotice(LiveKc.Account who, int tokenGen)
+		HeldNotice(LiveKc.Account who, int tokenGen, Map<String, Long> xp)
 		{
 			this.who = who;
 			this.tokenGen = tokenGen;
+			this.xp = xp;
 		}
 	}
 
@@ -750,17 +851,25 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		{
 			return;
 		}
-		logoutNotice(api, held.who, held.tokenGen, result.getValue());
+		logoutNotice(api, held.who, held.tokenGen, held.xp, result.getValue());
 	}
 
-	/** Sends the one logout notice when a competition is running and none went for the account lately. */
-	private void logoutNotice(DrmApiClient api, LiveKc.Account who, int tokenGen, CompetitionResponse comp)
+	/**
+	 * Sends the one logout notice when a competition is running and none went
+	 * for the account lately, with the player's XP in the competition's skill
+	 * ({@code xpSkill}) when this session saw it. That XP goes even when the
+	 * site has capped the timed sends: the logout notice is what carries XP then.
+	 */
+	private void logoutNotice(DrmApiClient api, LiveKc.Account who, int tokenGen, Map<String, Long> xp, CompetitionResponse comp)
 	{
 		if (!LiveKc.logoutWanted(comp) || !takeNoticeSlot(who, liveNow()))
 		{
 			return;     // no clan competition running, or one just went
 		}
-		api.postAuthed("/plugin/logout", Uploads.logout(who.rsn, who.digest, who.acct), LogoutResponse.class, answer ->
+		String skill = LiveXp.wanted(comp);
+		Long skillXp = skill == null || xp == null ? null : xp.get(skill);
+		JsonObject body = Uploads.logout(who.rsn, who.digest, who.acct, skillXp == null ? null : skill, skillXp);
+		api.postAuthed("/plugin/logout", body, LogoutResponse.class, answer ->
 		{
 			if (answer.getStatus() == ApiResult.Status.UNAUTHORIZED)
 			{
@@ -904,6 +1013,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		backfillTick();
 		rosterTick();
 		liveAccountTick();
+		liveXpTick();
 	}
 
 	/**
@@ -1628,6 +1738,71 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		});
 	}
 
+	// ---- Blorva and Radiant oathplate ----
+
+	/**
+	 * The player's own inventory: an Ancient blood ornament kit (Blorva) or an
+	 * assembled Purifying sigil (Radiant oathplate) arriving goes to the site
+	 * as an unlock, behind Post collection log like the other listed firsts
+	 * (those come in as collection log slots; these two aren't any). See
+	 * {@link UnlockWatch} for what counts as arriving.
+	 */
+	@Subscribe
+	public void onItemContainerChanged(ItemContainerChanged event)
+	{
+		if (event.getContainerId() != InventoryID.INV)
+		{
+			return;
+		}
+		if (!clogOn())
+		{
+			unlockWatch.reset();
+			return;
+		}
+		ItemContainer inv = event.getItemContainer();
+		Item[] items = inv == null ? new Item[0] : inv.getItems();
+		int[] ids = new int[items.length];
+		int[] qtys = new int[items.length];
+		for (int i = 0; i < items.length; i++)
+		{
+			ids[i] = items[i].getId();
+			qtys[i] = items[i].getQuantity();
+		}
+		boolean settled = loggedIn() && ticksSinceLogin >= ACCOUNT_TYPE_SETTLE_TICKS;
+		List<UnlockWatch.Unlock> got = unlockWatch.onInventory(ids, qtys, settled, storageOpen());
+		if (got.isEmpty() || !mainGameWorld())
+		{
+			return;
+		}
+		String rsn = localName();
+		if (rsn == null)
+		{
+			return;
+		}
+		Instant at = Clock.systemUTC().instant();
+		for (UnlockWatch.Unlock u : got)
+		{
+			postUnlock(u, Uploads.withAcct(Uploads.unlock(u.getKey(), u.getItem(), u.getId(), rsn, at, accountDigest()), accountType()));
+		}
+	}
+
+	/** Sends one unlock; the same route as the collection log. Overridden in tests. */
+	void postUnlock(UnlockWatch.Unlock u, JsonObject body)
+	{
+		postLoot("unlock " + u.getKey(), body);
+	}
+
+	/** Whether the bank or the group storage is open: items coming out of it aren't new. Overridden in tests. Client thread. */
+	boolean storageOpen()
+	{
+		return shown(client.getWidget(InterfaceID.Bankmain.UNIVERSE)) || shown(client.getWidget(InterfaceID.SharedBank.UNIVERSE));
+	}
+
+	private static boolean shown(Widget w)
+	{
+		return w != null && !w.isHidden();
+	}
+
 	@Subscribe
 	public void onConfigChanged(ConfigChanged event)
 	{
@@ -1760,6 +1935,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 			if (liveKcOn())
 			{
 				liveKc.checked(result.getValue());     // a kill kept unchecked goes once this lists its boss
+				liveXp.heard(result.getValue());     // and the XP timer learns the competition's skill
 			}
 			competitionLanded(result);     // and a logout notice held for this answer
 		});

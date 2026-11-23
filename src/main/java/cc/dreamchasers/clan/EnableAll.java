@@ -37,7 +37,7 @@ final class EnableAll
 		new Feature(DreamChasersClanConfig.CONNECT_KEY, "Connect to dream-chasers.cc"),
 		new Feature(DreamChasersClanConfig.PBS_KEY, "Post personal bests"),
 		new Feature(DreamChasersClanConfig.LOOT_KEY, "Post collection log"),
-		new Feature(DreamChasersClanConfig.LIVE_KC_KEY, "Live competition KC"),
+		new Feature(DreamChasersClanConfig.LIVE_KC_KEY, "Live competition KC and XP"),
 		new Feature(DreamChasersClanConfig.SPLASH_KEY, "Clan splash"),
 		new Feature(DreamChasersClanConfig.TILES_KEY, "Clan tile packs"),
 		new Feature(DreamChasersClanConfig.LIVE_KEY, "Join DRM Live"),

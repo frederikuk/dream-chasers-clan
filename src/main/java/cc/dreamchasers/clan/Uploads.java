@@ -17,7 +17,7 @@ import java.util.List;
 
 /**
  * The JSON bodies of {@code POST /plugin/pbs}, {@code /plugin/pbs/batch},
- * {@code /plugin/loots} and {@code /plugin/kc}. Each carries {@code digest}, the salted
+ * {@code /plugin/loots}, {@code /plugin/kc}, {@code /plugin/xp} and {@code /plugin/logout}. Each carries {@code digest}, the salted
  * SHA-256 of the account hash ({@link OwnClan#digest(long)}), so the site can
  * check the post comes from the account that verified; it is left out only
  * before login (null). The raw account hash is never sent. Each also carries
@@ -138,10 +138,61 @@ final class Uploads
 	/** {rsn, digest?, acct?}: a logout or hop, so the site can ask Wise Old Man for the new hiscores. */
 	static JsonObject logout(String rsn, String digest, Integer acct)
 	{
+		return logout(rsn, digest, acct, null, null);
+	}
+
+	/**
+	 * {rsn, digest?, acct?, skill?, xp?}: a logout or hop, with the player's XP
+	 * in the running competition's skill when known (both or neither), which
+	 * the site stores like a {@link #xp} send.
+	 */
+	static JsonObject logout(String rsn, String digest, Integer acct, String skill, Long xp)
+	{
 		JsonObject o = new JsonObject();
 		o.addProperty("rsn", rsn);
 		addDigest(o, digest);
+		if (skill != null && xp != null && xp >= 0)
+		{
+			o.addProperty("skill", skill);
+			o.addProperty("xp", xp);
+		}
 		return withAcct(o, acct);
+	}
+
+	/** Live competition XP: {rsn, digest?, skill, xp, acct?} */
+	static JsonObject xp(String skill, long xp, String rsn, String digest, Integer acct)
+	{
+		JsonObject o = new JsonObject();
+		o.addProperty("rsn", rsn);
+		addDigest(o, digest);
+		o.addProperty("skill", skill);
+		o.addProperty("xp", xp);
+		return withAcct(o, acct);
+	}
+
+	/**
+	 * A listed first that isn't a collection log slot (Blorva, Radiant
+	 * oathplate), seen arriving in the player's own inventory:
+	 * {kind: "unlock", unlock, items: [{name, id, qty: 1}], at, rsn, digest?},
+	 * to {@code POST /plugin/loots}. The site takes only the unlock keys it
+	 * knows.
+	 */
+	static JsonObject unlock(String key, String item, int id, String rsn, Instant at, String digest)
+	{
+		JsonObject o = new JsonObject();
+		o.addProperty("kind", "unlock");
+		o.addProperty("unlock", key);
+		JsonObject i = new JsonObject();
+		i.addProperty("name", item);
+		i.addProperty("id", id);
+		i.addProperty("qty", 1);
+		JsonArray list = new JsonArray();
+		list.add(i);
+		o.add("items", list);
+		o.addProperty("at", at.toString());
+		o.addProperty("rsn", rsn);
+		addDigest(o, digest);
+		return o;
 	}
 
 	/**

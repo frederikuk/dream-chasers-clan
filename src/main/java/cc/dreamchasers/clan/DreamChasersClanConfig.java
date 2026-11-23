@@ -81,7 +81,7 @@ public interface DreamChasersClanConfig extends Config
 		name = "Enable everything",
 		description = TIP + "Sign in first (tick Connect to dream-chasers.cc above, or use the player menu at the top right of the Dream Chasers panel); until you're signed in it turns itself straight back off and the panel says why. "
 			+ "Then it turns on every Dream Chasers feature below: Post personal bests, Post collection log, "
-			+ "Live competition KC, Clan splash, Clan tile packs, Join DRM Live and Share raid stats. Ticking it also turns Connect back on if you'd turned it off; untick to turn them all off, Connect included. It ticks itself once you have turned every one of them on. "
+			+ "Live competition KC and XP, Clan splash, Clan tile packs, Join DRM Live and Share raid stats. Ticking it also turns Connect back on if you'd turned it off; untick to turn them all off, Connect included. It ticks itself once you have turned every one of them on. "
 			+ "RuneLite only shows the new ticks once you close and reopen these settings. "
 			+ "It never agrees to the DRM Live stream consent or sends your character's model; those stay their own buttons" + TIP_END,
 		warning = "This feature submits your IP address to a 3rd-party server not controlled or verified by RuneLite developers",
@@ -178,7 +178,7 @@ public interface DreamChasersClanConfig extends Config
 	@ConfigItem(
 		keyName = LOOT_KEY,
 		name = "Post collection log",
-		description = TIP + "Send each new collection log slot, and your own drops worth the clan's big-drop amount (set by the site, 10M today, never below 1M), with where each came from, to the clan's Hall of Fame on dream-chasers.cc. Needs the game's 'Collection log - New addition notification' setting (chat or popup); the panel tells you if it's off. Big drops are priced with RuneLite's own prices. Each post carries your RSN and a hashed account id" + TIP_END,
+		description = TIP + "Send each new collection log slot, and your own drops worth the clan's big-drop amount (set by the site, 10M today, never below 1M), with where each came from, to the clan's Hall of Fame on dream-chasers.cc. Needs the game's 'Collection log - New addition notification' setting (chat or popup); the panel tells you if it's off. Big drops are priced with RuneLite's own prices. Also sends the two clan firsts that aren't collection log slots when they arrive in your own inventory (not out of the bank): an Ancient blood ornament kit (Blorva) and an assembled Purifying sigil (Radiant oathplate). Each post carries your RSN and a hashed account id" + TIP_END,
 		warning = "This feature submits your IP address to a 3rd-party server not controlled or verified by RuneLite developers",
 		section = DATA_SECTION,
 		position = 6
@@ -190,11 +190,12 @@ public interface DreamChasersClanConfig extends Config
 
 	@ConfigItem(
 		keyName = LIVE_KC_KEY,
-		name = "Live competition KC",
+		name = "Live competition KC and XP",
 		description = TIP + "While a clan competition on a boss or raid is running, send your kill count for that boss to dream-chasers.cc each time the game tells you it, "
 			+ "so the competition standings move as you kill instead of waiting for Wise Old Man (which only sees your hiscores after you log out). "
 			+ "Sends the boss, your kill count, your RSN, a hashed account id and your own account type (normal, ironman and so on); only for the bosses the site says are in a running competition, "
-			+ "your own kills only. When you log out or hop worlds while any clan competition is running (skills too), it also tells the site once (your RSN, hashed account id and account type) so the site can ask Wise Old Man to update you straight away. Needs you signed in" + TIP_END,
+			+ "your own kills only. While a clan competition on a skill is running, it sends your XP in that skill the same way, at most once every few minutes (as the site sets, never more than once every 2 minutes) and only when it has gone up. "
+			+ "When you log out or hop worlds while any clan competition is running (skills too), it also tells the site once (your RSN, hashed account id, account type and that XP) so the site can ask Wise Old Man to update you straight away. Needs you signed in" + TIP_END,
 		warning = "This feature submits your IP address to a 3rd-party server not controlled or verified by RuneLite developers",
 		section = DATA_SECTION,
 		position = 7

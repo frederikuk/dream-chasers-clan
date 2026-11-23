@@ -26,4 +26,6 @@ public class Competition
 	private String wom;
 	/** As {@link CompetitionResponse#getKcBosses()}, if the site puts it on the competition instead. */
 	private List<String> kcBosses;
+	/** As {@link CompetitionResponse#getXpSkill()}, if the site puts it on the competition instead. */
+	private String xpSkill;
 }

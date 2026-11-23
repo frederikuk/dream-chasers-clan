@@ -45,7 +45,7 @@ Sign in first: tick **Connect to dream-chasers.cc**, the first setting (see
 Sign in, below). Once you're signed in, the panel
 offers **Enable everything** (with the IP-address warning next to it), and the
 second setting does the same. It switches on Post personal bests, Post
-collection log, Live competition KC, Clan splash, Clan tile packs, Join DRM Live and Share raid
+collection log, Live competition KC and XP, Clan splash, Clan tile packs, Join DRM Live and Share raid
 stats. Before you're signed in it does nothing: the setting unticks itself and
 the panel's status line says why. It
 never agrees to the DRM Live stream consent or sends your character's model;
@@ -83,8 +83,12 @@ changes once you close and reopen them.
   setting **Collection log - New addition notification** (Settings, Chat; chat,
   popup or both); the panel tells you if it's off. Your own drops worth the clan's big-drop amount (10M today, never below 1M; the same for
   everyone, set by the site) are posted too, priced with RuneLite's own item
-  prices (no extra downloads). PvP kills are never posted. Same IP-address warning.
-- **Live competition KC** (off by default). While a clan competition on a
+  prices (no extra downloads). PvP kills are never posted. Two clan firsts
+  aren't collection log slots, so the plugin watches your own inventory for
+  them instead: an Ancient blood ornament kit (Blorva) or an assembled
+  Purifying sigil (Radiant oathplate) arriving is sent once, the same way (not
+  when you take one out of the bank). Same IP-address warning.
+- **Live competition KC and XP** (off by default). While a clan competition on a
   boss or raid is running, each kill-count line the game gives you for that
   boss ("Your Vorkath kill count is: 301.") sends the boss and the count to
   dream-chasers.cc, so the standings move as you kill. Wise Old Man stays the
@@ -95,7 +99,13 @@ changes once you close and reopen them.
   on disk. Your RSN and hashed account id go with it. When you log out or hop
   worlds while any clan competition is running (skills too), it also tells the site once, so the
   site can ask Wise Old Man to update you straight away instead of waiting for
-  its next check. Same IP-address warning.
+  its next check. While a clan competition on a skill is running, your XP in
+  that skill goes the same way, at most once every few minutes (the site sets
+  how often, 5 minutes today; the plugin never sends more than once every 2
+  minutes) and only when it has gone up since the last send. If the site's
+  daily limit is reached, the XP only goes with the log-out notice until the
+  next day (UTC). Same IP-address warning. (The setting's key is unchanged, so
+  it stays on for anyone who had Live competition KC on.)
 - **Share raid stats on DRM Live** (off by default). While you're on the clan
   stream and inside Chambers of Xeric, Theatre of Blood or Tombs of Amascut,
   the plugin sends your own hitpoints, prayer and inventory to dream-chasers.cc
