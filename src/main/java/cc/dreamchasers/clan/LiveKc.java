@@ -19,6 +19,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.regex.Pattern;
 
 /**
  * Live competition KC: the newest kill count per boss, sent to
@@ -43,13 +44,15 @@ import java.util.function.Consumer;
  * clan competition, never retried on a timer (the site caps the route at 60
  * posts per 10 minutes per member).</li>
  * <li>{@code POST /plugin/logout}: at most one per real logout or world hop,
- * never retried, only while the competition copy lists a boss, only from a
- * main-game world, and at most one per account per
+ * never retried, only while the competition copy says {@code jitLogout} (any
+ * clan competition running, skills too) or lists a boss (an older site has
+ * only {@code kcBosses}), only from a main-game world, and at most one per account per
  * {@link #NOTICE_GAP_SECONDS} seconds, so hop-heavy play sends at most about
  * 30 an hour. The site turns them into at most one Wise Old Man update per
  * account per 10 minutes.</li>
  * <li>{@code GET /competition}: the copy the panel already uses, kept for its
- * max-age but at least 60 s (the site sends 30 s, so in practice 60 s). Kills
+ * max-age but at least 60 s (the site sends 30 s while a boss competition
+ * runs, so in practice 60 s then, and 300 s otherwise). Kills
  * and logouts share it: at most one GET a minute from both together, and none
  * while the player neither kills a competition boss nor logs out nor hops.
  * So a logout or hop more than a minute after the last fetch usually costs one
@@ -93,10 +96,21 @@ final class LiveKc
 		}
 	}
 
-	/** Whether a {@code /competition} copy lists any boss: a clan competition the plugin sends for is running. */
+	/** Whether a {@code /competition} copy lists any boss: a clan competition the plugin sends KC for is running. */
 	static boolean running(CompetitionResponse r)
 	{
 		return !bosses(r).isEmpty();
+	}
+
+	/**
+	 * Whether a logout or hop should send the logout notice: the site says a
+	 * clan competition of any metric is running ({@code jitLogout}), or the
+	 * copy lists a boss, so a site from before {@code jitLogout} still gets
+	 * them during a boss competition.
+	 */
+	static boolean logoutWanted(CompetitionResponse r)
+	{
+		return r != null && (Boolean.TRUE.equals(r.getJitLogout()) || running(r));
 	}
 
 	/** Sends one count; {@code done} hears the site's answer. */
@@ -142,17 +156,37 @@ final class LiveKc
 		return out;
 	}
 
-	/** Whether the game's boss name is one of the site's, ignoring case and spaces at the ends. */
+	private static final Pattern CURLY = Pattern.compile("[\u2018\u2019`]");
+	private static final Pattern PUNCT = Pattern.compile("[:()]");
+	private static final Pattern SPACES = Pattern.compile("\\s+");
+
+	/**
+	 * A boss name as the site compares it (its bossKey): lower case, curly
+	 * apostrophes and backticks made straight, colons and brackets made
+	 * spaces, runs of spaces made one, trimmed, then a leading "the " dropped.
+	 * So "Theatre of Blood: Entry Mode" and "theatre of blood entry mode" are
+	 * one name, and so are "The Gauntlet" and "Gauntlet".
+	 */
+	static String key(String s)
+	{
+		String k = s.toLowerCase(Locale.ROOT);
+		k = CURLY.matcher(k).replaceAll("'");
+		k = PUNCT.matcher(k).replaceAll(" ");
+		k = SPACES.matcher(k).replaceAll(" ").trim();
+		return k.startsWith("the ") ? k.substring(4) : k;
+	}
+
+	/** Whether the game's boss name is one of the site's, compared as {@link #key} has them. */
 	static boolean wanted(List<String> bosses, String boss)
 	{
 		if (boss == null)
 		{
 			return false;
 		}
-		String b = boss.trim().toLowerCase(Locale.ROOT);
+		String b = key(boss);
 		for (String s : bosses)
 		{
-			if (s != null && s.trim().toLowerCase(Locale.ROOT).equals(b))
+			if (s != null && key(s).equals(b))
 			{
 				return true;
 			}

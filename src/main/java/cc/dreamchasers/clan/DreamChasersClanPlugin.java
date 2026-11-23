@@ -663,7 +663,9 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	 * A real logout (LOGIN_SCREEN) or a world hop: one {@code POST
 	 * /plugin/logout} for the account that was logged in, when Live
 	 * competition KC is on, the member is signed in and the cached
-	 * {@code /competition} copy lists any boss. The game's hiscores move on
+	 * {@code /competition} copy says {@code jitLogout} (any clan competition
+	 * running, skills too) or lists any boss (all an older site says). The
+	 * game's hiscores move on
 	 * logout, so the site can ask Wise Old Man for them (it does so only for a
 	 * participant, at most once per member per 10 minutes). Sent once: the
 	 * account is forgotten here, so a failed login back to LOGIN_SCREEN sends
@@ -730,7 +732,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 
 	/**
 	 * Any {@code /competition} answer but a busy refusal: settles a held
-	 * logout notice once (sent when the answer lists a boss, else dropped).
+	 * logout notice once (sent when the answer wants logouts, else dropped).
 	 */
 	void competitionLanded(ApiResult<CompetitionResponse> result)
 	{
@@ -754,7 +756,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	/** Sends the one logout notice when a competition is running and none went for the account lately. */
 	private void logoutNotice(DrmApiClient api, LiveKc.Account who, int tokenGen, CompetitionResponse comp)
 	{
-		if (!LiveKc.running(comp) || !takeNoticeSlot(who, liveNow()))
+		if (!LiveKc.logoutWanted(comp) || !takeNoticeSlot(who, liveNow()))
 		{
 			return;     // no clan competition running, or one just went
 		}

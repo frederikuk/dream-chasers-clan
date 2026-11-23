@@ -35,6 +35,9 @@ public class LiveLogoutTest
 	private static final String COMP = "{\"apiVersion\":1,\"status\":\"ongoing\",\"competition\":{\"id\":7,\"metric\":\"vorkath\"},"
 		+ "\"kcBosses\":[\"Vorkath\"]}";
 	private static final String NONE = "{\"apiVersion\":1,\"status\":\"none\",\"competition\":null,\"kcBosses\":[]}";
+	/** A skill competition: no boss to send KC for, but the site wants the logout notice. */
+	private static final String SKILL = "{\"apiVersion\":1,\"status\":\"ongoing\",\"competition\":{\"id\":8,\"metric\":\"attack\"},"
+		+ "\"kcBosses\":[],\"jitLogout\":true}";
 
 	private static class Game extends DreamChasersClanPlugin
 	{
@@ -175,6 +178,33 @@ public class LiveLogoutTest
 		assertEquals("one competition GET, then the cached copy", 3, http.requests.size());
 		assertTrue(http.requests.get(1).request.url().toString().endsWith("/plugin/logout"));
 		assertTrue(http.requests.get(2).request.url().toString().endsWith("/plugin/logout"));
+	}
+
+	@Test
+	public void aSkillCompetitionSendsTheNoticeToo() throws Exception
+	{
+		FakeHttp http = new FakeHttp();
+		http.reply(200, SKILL, "public, max-age=300");
+		http.reply(200, "{\"ok\":true}", null);
+		Game p = new Game(api(http));
+		p.login();
+		p.state(GameState.LOGIN_SCREEN);
+		waitFor(http, 2);
+		assertEquals(2, http.requests.size());
+		assertTrue(http.requests.get(1).request.url().toString().endsWith("/plugin/logout"));
+	}
+
+	@Test
+	public void jitLogoutFalseSendsNothing() throws Exception
+	{
+		FakeHttp http = new FakeHttp();
+		http.reply(200, "{\"apiVersion\":1,\"status\":\"none\",\"competition\":null,\"kcBosses\":[],\"jitLogout\":false}",
+			"public, max-age=300");
+		Game p = new Game(api(http));
+		p.login();
+		p.state(GameState.LOGIN_SCREEN);
+		waitFor(http, 2);
+		assertEquals("only the competition check", 1, http.requests.size());
 	}
 
 	@Test
@@ -340,6 +370,19 @@ public class LiveLogoutTest
 		assertFalse(LiveKc.running(null));
 		assertFalse(LiveKc.running(new Gson().fromJson(NONE, CompetitionResponse.class)));
 		assertTrue(LiveKc.running(new Gson().fromJson(COMP, CompetitionResponse.class)));
+	}
+
+	@Test
+	public void logoutsAreWantedForAnyCompetitionOrABossOnAnOlderSite()
+	{
+		Gson g = new Gson();
+		assertFalse(LiveKc.logoutWanted(null));
+		assertFalse(LiveKc.logoutWanted(g.fromJson(NONE, CompetitionResponse.class)));
+		assertTrue("a skill competition", LiveKc.logoutWanted(g.fromJson(SKILL, CompetitionResponse.class)));
+		assertFalse("a skill competition has no KC bosses", LiveKc.running(g.fromJson(SKILL, CompetitionResponse.class)));
+		assertTrue("an older site: no jitLogout, a boss listed", LiveKc.logoutWanted(g.fromJson(COMP, CompetitionResponse.class)));
+		assertTrue("a boss listed wins over a false jitLogout", LiveKc.logoutWanted(g.fromJson(
+			"{\"kcBosses\":[\"Vorkath\"],\"jitLogout\":false}", CompetitionResponse.class)));
 	}
 
 	@Test

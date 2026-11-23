@@ -150,6 +150,27 @@ public class LiveKcTest
 		assertFalse(LiveKc.wanted(b, null));
 	}
 
+	@Test
+	public void namesMatchAsTheSiteNormalisesThem()
+	{
+		List<String> b = java.util.Arrays.asList("Theatre of Blood: Entry Mode", "The Gauntlet", "K'ril Tsutsaroth",
+			"Barrows Chests", "The Tempor Tantrum (Shark)", null);
+		assertTrue("colon to a space", LiveKc.wanted(b, "theatre of blood entry mode"));
+		assertTrue("runs of spaces", LiveKc.wanted(b, "  Theatre  of   Blood :  Entry Mode "));
+		assertTrue("a leading The dropped on the site's side", LiveKc.wanted(b, "Gauntlet"));
+		assertTrue("and on the game's", LiveKc.wanted(java.util.Collections.singletonList("Nightmare"), "The Nightmare"));
+		assertTrue("a curly apostrophe", LiveKc.wanted(b, "K\u2019ril Tsutsaroth"));
+		assertTrue("a backtick", LiveKc.wanted(b, "K`ril Tsutsaroth"));
+		assertTrue("brackets to spaces", LiveKc.wanted(b, "Tempor Tantrum Shark"));
+		assertTrue("a KC-only name", LiveKc.wanted(b, "barrows chests"));
+		assertFalse("the inner The stays", LiveKc.wanted(b, "Tempor Shark"));
+		assertFalse("a different boss", LiveKc.wanted(b, "The Corrupted Gauntlet"));
+		assertFalse("an awakened kill is its own name", LiveKc.wanted(java.util.Collections.singletonList("Vardorvis"),
+			"Vardorvis (awakened)"));
+		assertEquals("theatre of blood entry mode", LiveKc.key("The Theatre of Blood: Entry Mode"));
+		assertEquals("only one leading the", "the end", LiveKc.key("The the end"));
+	}
+
 	private static CompetitionResponse listing(String... bosses)
 	{
 		CompetitionResponse r = new CompetitionResponse();

@@ -23,4 +23,10 @@ public class CompetitionResponse
 	 * site) when no clan competition is running.
 	 */
 	private List<String> kcBosses;
+	/**
+	 * Whether any clan competition (any metric, skills too) is running now, so
+	 * a logout or hop should send the logout notice; null on a site from
+	 * before 23 Nov 2026, which only says so through {@link #kcBosses}.
+	 */
+	private Boolean jitLogout;
 }
