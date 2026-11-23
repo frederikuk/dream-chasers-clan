@@ -252,6 +252,62 @@ public class LiveXpTest
 	}
 
 	@Test
+	public void aHopCarriesXpTheSiteHadNotGot()
+	{
+		LiveXp x = training();     // attack 1,500, never sent (say the cap, or a skipped notice)
+		x.heard(comp("attack", 300));
+		x.hop();
+		assertFalse("nothing in the new session yet", x.moved());
+		x.stat("attack", 1500);     // the login burst after the hop: the same value
+		assertTrue("still a gain to send", x.moved());
+		assertTrue(x.due(T0));
+		int s = x.session();
+		LiveXp.Send send = x.pick(s, comp("attack", 300));
+		assertNotNull(send);
+		assertEquals(1500, send.xp);
+		x.answered(s, send, ok(true, null, null), T0);
+		x.hop();
+		x.stat("attack", 1500);
+		assertFalse("the site has it now: nothing carried", x.moved());
+	}
+
+	@Test
+	public void aLogoutCarriesNothing()
+	{
+		LiveXp x = training();
+		x.reset();     // a real logout: maybe another account next
+		x.stat("attack", 1500);
+		assertFalse(x.moved());
+		assertTrue(x.snapshot().isEmpty());
+	}
+
+	@Test
+	public void xpTheLogoutNoticeDeliveredIsNotCarried()
+	{
+		LiveXp x = training();
+		x.heard(comp("attack", 300));
+		x.hop();
+		x.delivered("attack", 1500);     // the notice's answer lands after the hop
+		x.stat("attack", 1500);
+		assertFalse(x.moved());
+		assertTrue(x.snapshot().isEmpty());
+		x.stat("attack", 1600);
+		assertEquals("{attack=1600}", x.snapshot().toString());
+	}
+
+	@Test
+	public void aCarriedOtherSkillDoesNotStartATry()
+	{
+		LiveXp x = new LiveXp();
+		x.stat("mining", 5000);
+		x.stat("mining", 5500);
+		x.heard(comp("attack", 300));
+		x.hop();
+		x.stat("mining", 5500);
+		assertFalse("the competition is attack", x.moved());
+	}
+
+	@Test
 	public void anAnswerFromBeforeALogoutIsIgnored()
 	{
 		LiveXp x = training();

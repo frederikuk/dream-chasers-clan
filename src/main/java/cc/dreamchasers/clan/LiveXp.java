@@ -137,6 +137,12 @@ final class LiveXp
 	private final Map<String, Long> start = new HashMap<>();
 	/** The last XP the site answered for, per metric: an unchanged value isn't sent again. */
 	private final Map<String, Long> answered = new HashMap<>();
+	/**
+	 * XP the site hadn't got when the last session ended in a hop, per metric:
+	 * the next session's login value for it is still a gain to send. Cleared by
+	 * a logout, an account change or the plugin stopping.
+	 */
+	private final Map<String, Long> carry = new HashMap<>();
 	/** The skill the last copy named; null when it named none. */
 	private String target;
 	/** Whether a copy has been seen at all (until then every gain counts). */
@@ -159,11 +165,25 @@ final class LiveXp
 			return;
 		}
 		Long old = newest.put(metric, xp);
+		boolean counts = !targetKnown || target == null || target.equals(metric);
 		if (old == null)
 		{
-			start.put(metric, xp);
+			Long unsent = carry.remove(metric);
+			if (unsent != null && unsent > 0 && xp >= unsent)
+			{
+				// the last session (before a hop) ended with this unsent: it is still a gain
+				start.put(metric, Math.min(xp, unsent - 1));
+				if (counts)
+				{
+					moved = true;
+				}
+			}
+			else
+			{
+				start.put(metric, xp);
+			}
 		}
-		if (old != null && xp > old && (!targetKnown || target == null || target.equals(metric)))
+		if (old != null && xp > old && counts)
 		{
 			moved = true;     // the first value per session is where it starts, not a gain
 		}
@@ -360,6 +380,43 @@ final class LiveXp
 	}
 
 	/**
+	 * The site took this XP on a logout notice: it isn't sent again, in this
+	 * session or as a hop's carry. The notice answers after the hop's
+	 * {@link #hop}, so this lands in the next session. Any thread.
+	 */
+	synchronized void delivered(String metric, long xp)
+	{
+		if (metric == null)
+		{
+			return;
+		}
+		Long had = answered.get(metric);
+		if (had == null || had < xp)
+		{
+			answered.put(metric, xp);
+		}
+		Long unsent = carry.get(metric);
+		if (unsent != null && unsent <= xp)
+		{
+			carry.remove(metric);
+		}
+	}
+
+	/**
+	 * A world hop: as {@link #reset}, but XP the site hadn't got (the
+	 * {@link #snapshot}) is carried into the next session as a gain, so a
+	 * skipped logout notice (one within two minutes) or a capped send doesn't
+	 * lose it to the live standings. The same account always comes back from a
+	 * hop.
+	 */
+	synchronized void hop()
+	{
+		Map<String, Long> unsent = snapshot();
+		reset();
+		carry.putAll(unsent);
+	}
+
+	/**
 	 * A logout, a hop or the plugin stopping: the next session starts again
 	 * from the game's login values; an answer still out is ignored. The cap,
 	 * the interval and the time of the last try stay, so hopping never sends
@@ -368,6 +425,7 @@ final class LiveXp
 	synchronized void reset()
 	{
 		session++;
+		carry.clear();
 		newest.clear();
 		start.clear();
 		answered.clear();

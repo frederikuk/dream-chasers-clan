@@ -440,7 +440,14 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 			rosterDueTick = -1;
 			pbParser.reset();
 			liveKc.reset();     // maybe another account next; KC is cumulative, so the next kill sends the newest
-			liveXp.reset();     // the same for XP: the next session starts from the game's login values
+			if (state == GameState.HOPPING)
+			{
+				liveXp.hop();     // the same account comes back: XP the site hadn't got is still a gain to send
+			}
+			else
+			{
+				liveXp.reset();     // the same for XP: the next session starts from the game's login values
+			}
 			unlockWatch.reset();     // the next inventory load is a starting point, not an arrival
 			trialTimer.reset();
 			clogTracker.reset();
@@ -878,6 +885,10 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 			if (answer.getStatus() != ApiResult.Status.OK)
 			{
 				log.debug("Logout notice not taken: {}", answer.getMessage());
+			}
+			else if (skillXp != null)
+			{
+				liveXp.delivered(skill, skillXp);     // the site has it: a hop doesn't send it again
 			}
 		});
 	}

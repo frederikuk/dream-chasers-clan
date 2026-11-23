@@ -227,6 +227,33 @@ public class LiveXpPluginTest
 	}
 
 	@Test
+	public void aHopWithTheNoticeSkippedStillSendsTheXp() throws Exception
+	{
+		FakeHttp http = new FakeHttp();
+		http.reply(200, ATTACK, "public, max-age=300");
+		http.reply(200, "{\"ok\":true}", null);
+		http.reply(200, "{\"ok\":true,\"stored\":true}", null);
+		Game p = new Game(api(http));
+		p.login(Skill.ATTACK, 1_000_000);
+		p.state(GameState.HOPPING);     // a first hop: its notice carries no XP (attack hadn't moved)
+		waitFor(http, 2);
+		assertEquals(2, http.requests.size());
+
+		p.login(Skill.ATTACK, 1_000_000);
+		p.stat(Skill.ATTACK, 1_000_400);
+		p.now = p.now.plusSeconds(60);
+		p.state(GameState.HOPPING);     // within two minutes: no notice, the XP is unsent
+		p.login(Skill.ATTACK, 1_000_400);
+		p.now = p.now.plusSeconds(300);
+		p.tick();
+		waitFor(http, 3);
+		assertEquals(3, http.requests.size());
+		assertEquals("https://dream-chasers.cc/api/v1/plugin/xp", http.requests.get(2).request.url().toString());
+		assertEquals("{\"rsn\":\"Lomaru\",\"digest\":\"dig\",\"skill\":\"attack\",\"xp\":1000400,\"acct\":1}",
+			http.requests.get(2).body);
+	}
+
+	@Test
 	public void aCompetitionHeardMidSessionSendsNoUnchangedXp() throws Exception
 	{
 		FakeHttp http = new FakeHttp();
