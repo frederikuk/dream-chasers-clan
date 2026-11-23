@@ -111,11 +111,10 @@ public class UploadsTest
 		assertEquals(1, batch.get("acct").getAsInt());
 	}
 	@Test
-	public void anUnlockNamesItsKeyAndItem()
+	public void anUnlockNamesItsKeyOnly()
 	{
-		assertEquals("{\"kind\":\"unlock\",\"unlock\":\"blorva\",\"items\":[{\"name\":\"Ancient blood ornament kit\",\"id\":28336,\"qty\":1}],"
-			+ "\"at\":\"2026-11-02T21:15:00Z\",\"rsn\":\"Lomaru\",\"digest\":\"d\",\"acct\":0}",
-			Uploads.withAcct(Uploads.unlock("blorva", "Ancient blood ornament kit", 28336, "Lomaru", AT, "d"), 0).toString());
-		carriesDigestNotHash(Uploads.unlock("radiant_oathplate", "Purifying sigil", 30793, "Lomaru", AT, DIGEST));
+		assertEquals("{\"unlock\":\"blorva\",\"at\":\"2026-11-02T21:15:00Z\",\"rsn\":\"Lomaru\",\"digest\":\"d\",\"acct\":0}",
+			Uploads.withAcct(Uploads.unlock("blorva", "Lomaru", AT, "d"), 0).toString());
+		carriesDigestNotHash(Uploads.unlock("radiant_oathplate", "Lomaru", AT, DIGEST));
 	}
 }

@@ -133,6 +133,8 @@ final class LiveXp
 
 	/** The newest XP per metric this session. */
 	private final Map<String, Long> newest = new HashMap<>();
+	/** The first XP per metric this session (the login values): a value no higher than this hasn't moved. */
+	private final Map<String, Long> start = new HashMap<>();
 	/** The last XP the site answered for, per metric: an unchanged value isn't sent again. */
 	private final Map<String, Long> answered = new HashMap<>();
 	/** The skill the last copy named; null when it named none. */
@@ -157,6 +159,10 @@ final class LiveXp
 			return;
 		}
 		Long old = newest.put(metric, xp);
+		if (old == null)
+		{
+			start.put(metric, xp);
+		}
 		if (old != null && xp > old && (!targetKnown || target == null || target.equals(metric)))
 		{
 			moved = true;     // the first value per session is where it starts, not a gain
@@ -177,8 +183,7 @@ final class LiveXp
 		if (target != null)
 		{
 			idleUntil = null;     // a skill competition is on: the normal interval applies
-			Long xp = newest.get(target);
-			if (!target.equals(was) && xp != null && !xp.equals(answered.get(target)))
+			if (!target.equals(was) && changed(target))
 			{
 				moved = true;     // it just started (or changed) and this session has moved
 			}
@@ -248,14 +253,24 @@ final class LiveXp
 		{
 			idleUntil = lastTry == null ? null : lastTry.plusSeconds(NO_SKILL_RECHECK_SECONDS);
 		}
-		Long xp = skill == null ? null : newest.get(skill);
-		if (xp == null || xp.equals(answered.get(skill)))
+		if (skill == null || !changed(skill))
 		{
 			inFlight = false;
 			moved = false;     // nothing new for the competition's skill: wait for the next gain
 			return null;
 		}
-		return new Send(skill, xp);
+		return new Send(skill, newest.get(skill));
+	}
+
+	/**
+	 * Whether a metric's XP has risen this session and isn't the value the
+	 * site last took: the only XP worth sending.
+	 */
+	private boolean changed(String metric)
+	{
+		Long xp = newest.get(metric);
+		Long first = start.get(metric);
+		return xp != null && first != null && xp > first && !xp.equals(answered.get(metric));
 	}
 
 	/** Ends a try that sent nothing. */
@@ -268,9 +283,10 @@ final class LiveXp
 	}
 
 	/**
-	 * The site's answer to one send. Any 200 is an answer: that XP isn't sent
-	 * again. "cap" stops timed sends until its {@code until} (or the next UTC
-	 * day). A failure keeps the XP for the next interval.
+	 * The site's answer to one send. Any 200 but "cap" is an answer: that XP
+	 * isn't sent again. "cap" stores nothing and stops timed sends until its
+	 * {@code until} (or the next UTC day), so the XP stays unsent for the
+	 * logout notice. A failure keeps the XP for the next interval.
 	 */
 	synchronized void answered(int s, Send sent, ApiResult<XpResponse> result, Instant now)
 	{
@@ -283,14 +299,17 @@ final class LiveXp
 		{
 			return;     // not taken: the next interval sends the newest
 		}
-		answered.put(sent.skill, sent.xp);
-		Long latest = newest.get(sent.skill);
-		moved = latest != null && latest != sent.xp;     // gained while the send was out
 		XpResponse r = result.getValue();
 		if (!r.isStored() && "cap".equals(r.getReason()))
 		{
+			// not kept: the logout notice (or the first send after the cap) still carries it
 			cappedUntil = capEnd(r.getUntil(), now);
+			moved = true;
+			return;
 		}
+		answered.put(sent.skill, sent.xp);
+		Long latest = newest.get(sent.skill);
+		moved = latest != null && latest != sent.xp;     // gained while the send was out
 	}
 
 	/**
@@ -321,10 +340,23 @@ final class LiveXp
 		return cappedUntil != null && now.isBefore(cappedUntil);
 	}
 
-	/** A copy of the newest XP per metric, taken on the client thread for the logout notice. */
+	/**
+	 * The newest XP of each metric that has risen this session and isn't what
+	 * the site last took, taken on the client thread for the logout notice. A
+	 * skill nobody trained, or one the site already has, isn't in it, so its
+	 * notice carries no XP.
+	 */
 	synchronized Map<String, Long> snapshot()
 	{
-		return new HashMap<>(newest);
+		Map<String, Long> out = new HashMap<>();
+		for (String m : newest.keySet())
+		{
+			if (changed(m))
+			{
+				out.put(m, newest.get(m));
+			}
+		}
+		return out;
 	}
 
 	/**
@@ -337,6 +369,7 @@ final class LiveXp
 	{
 		session++;
 		newest.clear();
+		start.clear();
 		answered.clear();
 		moved = false;
 		inFlight = false;

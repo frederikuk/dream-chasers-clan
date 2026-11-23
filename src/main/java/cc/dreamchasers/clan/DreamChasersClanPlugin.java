@@ -1782,14 +1782,33 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		Instant at = Clock.systemUTC().instant();
 		for (UnlockWatch.Unlock u : got)
 		{
-			postUnlock(u, Uploads.withAcct(Uploads.unlock(u.getKey(), u.getItem(), u.getId(), rsn, at, accountDigest()), accountType()));
+			postUnlock(u, Uploads.withAcct(Uploads.unlock(u.getKey(), rsn, at, accountDigest()), accountType()));
 		}
 	}
 
-	/** Sends one unlock; the same route as the collection log. Overridden in tests. */
+	/**
+	 * Sends one unlock to the site's own route, {@code POST /plugin/unlock}
+	 * ({@code /plugin/loots} takes only collection log slots and drops).
+	 */
 	void postUnlock(UnlockWatch.Unlock u, JsonObject body)
 	{
-		postLoot("unlock " + u.getKey(), body);
+		DrmApiClient api = api();
+		if (api == null)
+		{
+			return;
+		}
+		int tokenGen = signInGen;
+		api.postAuthed("/plugin/unlock", body, SubmitResponse.class, result ->
+		{
+			if (result.getStatus() == ApiResult.Status.UNAUTHORIZED)
+			{
+				forgetToken(tokenGen);
+			}
+			if (result.getStatus() != ApiResult.Status.OK)
+			{
+				log.debug("unlock {} not taken: {}", u.getKey(), result.getMessage());
+			}
+		});
 	}
 
 	/** Whether the bank or the group storage is open: items coming out of it aren't new. Overridden in tests. Client thread. */

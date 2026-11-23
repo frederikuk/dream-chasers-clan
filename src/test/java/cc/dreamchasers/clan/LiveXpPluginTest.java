@@ -227,6 +227,57 @@ public class LiveXpPluginTest
 	}
 
 	@Test
+	public void aCompetitionHeardMidSessionSendsNoUnchangedXp() throws Exception
+	{
+		FakeHttp http = new FakeHttp();
+		http.reply(200, ATTACK, "public, max-age=300");
+		Game p = new Game(api(http));
+		p.login(Skill.ATTACK, 1_000_000);
+		p.stat(Skill.MINING, 10_000);
+		p.liveXp().heard(new Gson().fromJson(ATTACK, cc.dreamchasers.clan.api.CompetitionResponse.class));     // the panel's answer
+		p.tick();
+		p.now = p.now.plusSeconds(600);
+		p.tick();
+		waitFor(http, 1);
+		assertEquals("attack never moved: no GET, no POST", 0, http.requests.size());
+	}
+
+	@Test
+	public void theLogoutNoticeLeavesOutXpThatNeverMoved() throws Exception
+	{
+		FakeHttp http = new FakeHttp();
+		http.reply(200, ATTACK, "public, max-age=300");
+		http.reply(200, "{\"ok\":true}", null);
+		Game p = new Game(api(http));
+		p.login(Skill.ATTACK, 1_000_000);
+		p.state(GameState.LOGIN_SCREEN);
+		waitFor(http, 2);
+		assertEquals(2, http.requests.size());
+		FakeHttp.Recorded notice = http.requests.get(1);
+		assertEquals("https://dream-chasers.cc/api/v1/plugin/logout", notice.request.url().toString());
+		assertEquals("{\"rsn\":\"Lomaru\",\"digest\":\"dig\",\"acct\":1}", notice.body);
+	}
+
+	@Test
+	public void theLogoutNoticeLeavesOutXpTheSiteAlreadyHas() throws Exception
+	{
+		FakeHttp http = new FakeHttp();
+		http.reply(200, ATTACK, "public, max-age=300");
+		http.reply(200, "{\"ok\":true,\"stored\":true}", null);
+		http.reply(200, "{\"ok\":true}", null);
+		Game p = new Game(api(http));
+		p.login(Skill.ATTACK, 1_000_000);
+		p.stat(Skill.ATTACK, 1_000_100);
+		p.tick();
+		waitFor(http, 2);
+		waitIdle(p.liveXp());
+		p.state(GameState.LOGIN_SCREEN);
+		waitFor(http, 3);
+		assertEquals(3, http.requests.size());
+		assertEquals("{\"rsn\":\"Lomaru\",\"digest\":\"dig\",\"acct\":1}", http.requests.get(2).body);
+	}
+
+	@Test
 	public void anotherSkillsGainSendsNoXp() throws Exception
 	{
 		FakeHttp http = new FakeHttp();

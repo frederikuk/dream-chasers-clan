@@ -173,22 +173,13 @@ final class Uploads
 	/**
 	 * A listed first that isn't a collection log slot (Blorva, Radiant
 	 * oathplate), seen arriving in the player's own inventory:
-	 * {kind: "unlock", unlock, items: [{name, id, qty: 1}], at, rsn, digest?},
-	 * to {@code POST /plugin/loots}. The site takes only the unlock keys it
-	 * knows.
+	 * {unlock, at, rsn, digest?}, to {@code POST /plugin/unlock}. The site
+	 * takes only the unlock keys it knows.
 	 */
-	static JsonObject unlock(String key, String item, int id, String rsn, Instant at, String digest)
+	static JsonObject unlock(String key, String rsn, Instant at, String digest)
 	{
 		JsonObject o = new JsonObject();
-		o.addProperty("kind", "unlock");
 		o.addProperty("unlock", key);
-		JsonObject i = new JsonObject();
-		i.addProperty("name", item);
-		i.addProperty("id", id);
-		i.addProperty("qty", 1);
-		JsonArray list = new JsonArray();
-		list.add(i);
-		o.add("items", list);
 		o.addProperty("at", at.toString());
 		o.addProperty("rsn", rsn);
 		addDigest(o, digest);

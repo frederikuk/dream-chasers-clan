@@ -293,6 +293,58 @@ public class LiveXpTest
 	}
 
 	@Test
+	public void aCompetitionStartingWithNoGainInItsSkillSendsNothing()
+	{
+		LiveXp x = new LiveXp();
+		x.stat("attack", 1000);     // the login burst
+		x.stat("mining", 5000);
+		x.heard(comp(null, 300));
+		x.heard(comp("attack", 300));     // an attack competition starts mid-session
+		assertFalse("attack never moved", x.moved());
+		assertFalse(x.due(T0));
+	}
+
+	@Test
+	public void anotherSkillsGainBeforeAnyCopySendsNothingForTheUnmovedSkill()
+	{
+		LiveXp x = new LiveXp();
+		x.stat("attack", 1000);
+		x.stat("mining", 5000);
+		x.stat("mining", 5500);     // no copy yet: any gain counts for a try
+		assertTrue(x.due(T0));
+		int s = x.session();
+		assertNull("attack is still its login value", x.pick(s, comp("attack", 300)));
+		assertFalse(x.sending());
+		assertFalse(x.moved());
+	}
+
+	@Test
+	public void theSnapshotHoldsOnlyXpTheSiteHasNotGot()
+	{
+		LiveXp x = training();
+		x.stat("mining", 5000);     // login value only
+		assertEquals("{attack=1500}", x.snapshot().toString());
+		x.due(T0);
+		int s = x.session();
+		x.answered(s, x.pick(s, comp("attack", 300)), ok(true, null, null), T0);
+		assertTrue("the site has 1500", x.snapshot().isEmpty());
+		x.stat("attack", 1600);
+		assertEquals("{attack=1600}", x.snapshot().toString());
+	}
+
+	@Test
+	public void aCappedSendStaysInTheSnapshot()
+	{
+		LiveXp x = training();
+		x.due(T0);
+		int s = x.session();
+		x.answered(s, x.pick(s, comp("attack", 300)), ok(false, "cap", null), T0);
+		assertEquals("the cap stored nothing: the logout notice carries it", "{attack=1500}", x.snapshot().toString());
+		assertTrue("sent once the cap ends", x.due(Instant.parse("2026-11-24T00:00:00Z")));
+		assertEquals(1500, x.pick(s, comp("attack", 300)).xp);
+	}
+
+	@Test
 	public void theBodies()
 	{
 		assertEquals("{\"rsn\":\"Lomaru\",\"digest\":\"d\",\"skill\":\"sailing\",\"xp\":13034431,\"acct\":2}",

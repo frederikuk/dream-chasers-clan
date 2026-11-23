@@ -86,8 +86,8 @@ changes once you close and reopen them.
   prices (no extra downloads). PvP kills are never posted. Two clan firsts
   aren't collection log slots, so the plugin watches your own inventory for
   them instead: an Ancient blood ornament kit (Blorva) or an assembled
-  Purifying sigil (Radiant oathplate) arriving is sent once, the same way (not
-  when you take one out of the bank). Same IP-address warning.
+  Purifying sigil (Radiant oathplate) arriving is sent once, with your RSN and
+  hashed account id (not when you take one out of the bank). Same IP-address warning.
 - **Live competition KC and XP** (off by default). While a clan competition on a
   boss or raid is running, each kill-count line the game gives you for that
   boss ("Your Vorkath kill count is: 301.") sends the boss and the count to
