@@ -230,7 +230,7 @@ public class LiveKcTest
 		Thread.sleep(50);     // anything more would show up by now
 	}
 
-	private static DreamChasersClanPlugin plugin(DrmApiClient api)
+	private static DreamChasersClanPlugin plugin(DrmApiClient api, boolean main)
 	{
 		return new DreamChasersClanPlugin()
 		{
@@ -239,7 +239,30 @@ public class LiveKcTest
 			{
 				return api;
 			}
+
+			@Override
+			boolean mainGameWorld()
+			{
+				return main;
+			}
 		};
+	}
+
+	private static DreamChasersClanPlugin plugin(DrmApiClient api)
+	{
+		return plugin(api, true);
+	}
+
+	@Test
+	public void aKillOnALeaguesOrDeadmanWorldSendsNothing() throws Exception
+	{
+		FakeHttp http = new FakeHttp();
+		DrmApiClient api = new DrmApiClient(http.client, new Gson(), "https://dream-chasers.cc/api/v1", "UA", () -> "drm_pt_x",
+			new FakeHttp.MutableClock(Instant.parse("2026-11-22T12:00:00Z")));
+		http.reply(200, COMP, "public, max-age=300");
+		plugin(api, false).liveKc(new PbParser.KillCount("Vorkath", 301), "Lomaru", "dig", 1);
+		waitFor(http, 1);
+		assertEquals("not even the competition check", 0, http.requests.size());
 	}
 
 	@Test

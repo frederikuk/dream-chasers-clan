@@ -8,6 +8,7 @@
 package cc.dreamchasers.clan;
 
 import cc.dreamchasers.clan.api.ApiResult;
+import cc.dreamchasers.clan.api.CompetitionResponse;
 import cc.dreamchasers.clan.api.DrmApiClient;
 import cc.dreamchasers.clan.api.Endpoint;
 import cc.dreamchasers.clan.api.FeaturedResponse;
@@ -44,6 +45,7 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -52,6 +54,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -63,6 +66,7 @@ import net.runelite.api.GameState;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.Skill;
+import net.runelite.api.WorldType;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.clan.ClanID;
@@ -174,6 +178,12 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	private final LiveKc liveKc = new LiveKc();
 	/** Who is logged in, for the one logout notice; null once sent or when nobody is. Client thread. */
 	private LiveKc.Account liveAccount;
+	/** A logout notice waiting for a {@code /competition} fetch that was already out; settled once. */
+	private final AtomicReference<HeldNotice> heldLogout = new AtomicReference<>();
+	/** The last logout notice sent, and when (client clock); guarded by {@code noticeLock}. */
+	private LiveKc.Account lastNotice;
+	private Instant lastNoticeAt;
+	private final Object noticeLock = new Object();
 	/**
 	 * Game ticks since the last login or hop; the account-type varbit is only
 	 * read once the game has had a tick or two to send it. Client thread.
@@ -381,6 +391,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		pbParser.reset();
 		liveKc.reset();
 		liveAccount = null;     // stopping the plugin isn't a logout: nothing is sent
+		heldLogout.set(null);
 		forgetPbsSent();
 		clogTracker.reset();
 	}
@@ -588,9 +599,9 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	void liveKc(PbParser.KillCount k, String rsn, String digest, Integer acct)
 	{
 		DrmApiClient api = api();
-		if (api == null)
+		if (api == null || !mainGameWorld())
 		{
-			return;
+			return;     // a Leagues or Deadman kill count isn't the main game's
 		}
 		int tokenGen = signInGen;
 		int session = liveKc.session();
@@ -609,7 +620,10 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 			});
 		// no copy at all (none yet, and the fetch failed or another is out): kept unchecked, not dropped
 		api.fetch(Endpoint.COMPETITION, false, result ->
-			liveKc.kill(session, result.getValue(), k.getBoss(), k.getKc(), poster));
+		{
+			liveKc.kill(session, result.getValue(), k.getBoss(), k.getKc(), poster);
+			competitionLanded(result);
+		});
 	}
 
 	/**
@@ -621,6 +635,13 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	{
 		if (!liveKcOn() || !loggedIn() || ticksSinceLogin < ACCOUNT_TYPE_SETTLE_TICKS)
 		{
+			return;
+		}
+		if (!mainGameWorld())
+		{
+			// Leagues, Deadman and the like: the main hiscores Wise Old Man reads don't move. This runs on
+			// the world being left, so a hop from a main world to one of these still sends, the other way not.
+			liveAccount = null;
 			return;
 		}
 		LiveKc.Account now = liveAccountNow();
@@ -646,7 +667,11 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 	 * logout, so the site can ask Wise Old Man for them (it does so only for a
 	 * participant, at most once per member per 10 minutes). Sent once: the
 	 * account is forgotten here, so a failed login back to LOGIN_SCREEN sends
-	 * nothing, and a failed send is never retried. Client thread.
+	 * nothing, and a failed send is never retried. Nothing goes from a
+	 * Leagues, Deadman or other non-main world (the account isn't noted
+	 * there), nor within {@link LiveKc#NOTICE_GAP_SECONDS} seconds of the last
+	 * notice for the same account. With no copy yet and another fetch already
+	 * out, the notice is held for that fetch's answer, once. Client thread.
 	 */
 	void liveLogout()
 	{
@@ -661,26 +686,152 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 		{
 			return;
 		}
+		if (noticeRecent(who, liveNow()))
+		{
+			return;     // one went for this account under two minutes ago: the site would do nothing more with it
+		}
 		int tokenGen = signInGen;
 		// cache-first: the copy the panel and the kills already use; a GET only when it is stale
 		api.fetch(Endpoint.COMPETITION, false, result ->
 		{
-			if (!LiveKc.running(result.getValue()))
+			if (noAnswerYet(result))
 			{
-				return;     // no clan competition running: nothing to update
+				// no copy yet and another fetch is out: its answer settles this, once
+				heldLogout.set(new HeldNotice(who, tokenGen));
+				return;
 			}
-			api.postAuthed("/plugin/logout", Uploads.logout(who.rsn, who.digest, who.acct), LogoutResponse.class, answer ->
-			{
-				if (answer.getStatus() == ApiResult.Status.UNAUTHORIZED)
-				{
-					forgetToken(tokenGen);
-				}
-				if (answer.getStatus() != ApiResult.Status.OK)
-				{
-					log.debug("Logout notice not taken: {}", answer.getMessage());
-				}
-			});
+			logoutNotice(api, who, tokenGen, result.getValue());
+			competitionLanded(result);
 		});
+	}
+
+	/**
+	 * A logout notice kept until the {@code /competition} fetch already out has
+	 * answered. A back-off refusal with no copy reads the same, so the notice
+	 * then waits for the next answer (a kill or the panel), still sent once.
+	 */
+	private static final class HeldNotice
+	{
+		final LiveKc.Account who;
+		final int tokenGen;
+
+		HeldNotice(LiveKc.Account who, int tokenGen)
+		{
+			this.who = who;
+			this.tokenGen = tokenGen;
+		}
+	}
+
+	/** No copy at all and no answer: the fetch was refused because another one is out. */
+	static boolean noAnswerYet(ApiResult<?> result)
+	{
+		return result.getValue() == null && DrmApiClient.BUSY.equals(result.getMessage());
+	}
+
+	/**
+	 * Any {@code /competition} answer but a busy refusal: settles a held
+	 * logout notice once (sent when the answer lists a boss, else dropped).
+	 */
+	void competitionLanded(ApiResult<CompetitionResponse> result)
+	{
+		if (noAnswerYet(result))
+		{
+			return;
+		}
+		HeldNotice held = heldLogout.getAndSet(null);
+		if (held == null)
+		{
+			return;
+		}
+		DrmApiClient api = api();
+		if (api == null || !liveKcOn())
+		{
+			return;
+		}
+		logoutNotice(api, held.who, held.tokenGen, result.getValue());
+	}
+
+	/** Sends the one logout notice when a competition is running and none went for the account lately. */
+	private void logoutNotice(DrmApiClient api, LiveKc.Account who, int tokenGen, CompetitionResponse comp)
+	{
+		if (!LiveKc.running(comp) || !takeNoticeSlot(who, liveNow()))
+		{
+			return;     // no clan competition running, or one just went
+		}
+		api.postAuthed("/plugin/logout", Uploads.logout(who.rsn, who.digest, who.acct), LogoutResponse.class, answer ->
+		{
+			if (answer.getStatus() == ApiResult.Status.UNAUTHORIZED)
+			{
+				forgetToken(tokenGen);
+			}
+			if (answer.getStatus() != ApiResult.Status.OK)
+			{
+				log.debug("Logout notice not taken: {}", answer.getMessage());
+			}
+		});
+	}
+
+	/** Whether a notice for this account went less than {@link LiveKc#NOTICE_GAP_SECONDS} ago. */
+	boolean noticeRecent(LiveKc.Account who, Instant now)
+	{
+		synchronized (noticeLock)
+		{
+			return lastNotice != null && lastNotice.same(who.rsn, who.digest, who.acct)
+				&& now.isBefore(lastNoticeAt.plusSeconds(LiveKc.NOTICE_GAP_SECONDS));
+		}
+	}
+
+	/** Claims the send for this account now, unless one went within the gap. */
+	private boolean takeNoticeSlot(LiveKc.Account who, Instant now)
+	{
+		synchronized (noticeLock)
+		{
+			if (noticeRecent(who, now))
+			{
+				return false;
+			}
+			lastNotice = who;
+			lastNoticeAt = now;
+			return true;
+		}
+	}
+
+	/** The client clock for the notice gap. Overridden in tests. */
+	Instant liveNow()
+	{
+		return Clock.systemUTC().instant();
+	}
+
+	/**
+	 * Worlds whose progress isn't on the main-game hiscores Wise Old Man reads,
+	 * or isn't kept at all: Leagues, Deadman, tournament, beta, fresh start,
+	 * quest speedrunning and no-save worlds.
+	 */
+	static final Set<WorldType> NOT_MAIN_GAME = EnumSet.of(WorldType.SEASONAL, WorldType.DEADMAN,
+		WorldType.TOURNAMENT_WORLD, WorldType.BETA_WORLD, WorldType.FRESH_START_WORLD,
+		WorldType.QUEST_SPEEDRUNNING, WorldType.NOSAVE_MODE);
+
+	/** Whether a world with these types counts for the main game; an unknown (null) set does. */
+	static boolean mainGame(Set<WorldType> types)
+	{
+		if (types == null)
+		{
+			return true;
+		}
+		for (WorldType t : types)
+		{
+			if (NOT_MAIN_GAME.contains(t))
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** Whether the current world counts for the main game. Client thread. Overridden in tests. */
+	boolean mainGameWorld()
+	{
+		return mainGame(client.getWorldType());
 	}
 
 	/** The site client while the plugin runs; null otherwise. Overridden in tests. */
@@ -1608,6 +1759,7 @@ public class DreamChasersClanPlugin extends Plugin implements DreamChasersPanel.
 			{
 				liveKc.checked(result.getValue());     // a kill kept unchecked goes once this lists its boss
 			}
+			competitionLanded(result);     // and a logout notice held for this answer
 		});
 		api.fetch(Endpoint.HALL_OF_FAME, force, result ->
 		{

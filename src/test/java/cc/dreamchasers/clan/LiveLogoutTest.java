@@ -10,13 +10,17 @@ package cc.dreamchasers.clan;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import cc.dreamchasers.clan.api.ApiResult;
 import cc.dreamchasers.clan.api.CompetitionResponse;
 import cc.dreamchasers.clan.api.DrmApiClient;
 import cc.dreamchasers.clan.api.FakeHttp;
+import cc.dreamchasers.clan.pb.PbParser;
 import com.google.gson.Gson;
 import java.time.Instant;
 import java.util.Collections;
+import java.util.EnumSet;
 import net.runelite.api.GameState;
+import net.runelite.api.WorldType;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import org.junit.Test;
@@ -37,6 +41,8 @@ public class LiveLogoutTest
 		final DrmApiClient api;
 		boolean on = true;
 		boolean in;
+		boolean main = true;
+		Instant now = Instant.parse("2026-11-22T12:00:00Z");
 		String name = "Lomaru";
 
 		Game(DrmApiClient api)
@@ -60,6 +66,18 @@ public class LiveLogoutTest
 		boolean loggedIn()
 		{
 			return in;
+		}
+
+		@Override
+		boolean mainGameWorld()
+		{
+			return main;
+		}
+
+		@Override
+		Instant liveNow()
+		{
+			return now;
 		}
 
 		@Override
@@ -151,6 +169,7 @@ public class LiveLogoutTest
 		p.state(GameState.LOADING, GameState.LOGGED_IN);
 		p.onGameTick(new GameTick());
 		p.onGameTick(new GameTick());
+		p.now = p.now.plusSeconds(LiveKc.NOTICE_GAP_SECONDS);     // the gap has passed
 		p.state(GameState.HOPPING);
 		waitFor(http, 3);
 		assertEquals("one competition GET, then the cached copy", 3, http.requests.size());
@@ -225,6 +244,94 @@ public class LiveLogoutTest
 		p.state(GameState.LOGIN_SCREEN);
 		waitFor(http, 3);
 		assertEquals(2, http.requests.size());
+	}
+
+	@Test
+	public void aHopWithinTwoMinutesOfTheLastNoticeSendsNothingMore() throws Exception
+	{
+		FakeHttp http = new FakeHttp();
+		http.reply(200, COMP, "public, max-age=300");
+		http.reply(200, "{\"ok\":true}", null);
+		Game p = new Game(api(http));
+		p.login();
+		p.state(GameState.HOPPING);
+		waitFor(http, 2);
+		p.state(GameState.LOADING, GameState.LOGGED_IN);
+		p.onGameTick(new GameTick());
+		p.onGameTick(new GameTick());
+		p.now = p.now.plusSeconds(LiveKc.NOTICE_GAP_SECONDS - 1);
+		p.state(GameState.HOPPING);
+		waitFor(http, 3);
+		assertEquals("no second notice and no GET for it", 2, http.requests.size());
+
+		p.name = "Alt";     // another account isn't held back by the first one's notice
+		p.state(GameState.LOADING, GameState.LOGGED_IN);
+		p.onGameTick(new GameTick());
+		p.onGameTick(new GameTick());
+		http.reply(200, "{\"ok\":true}", null);
+		p.state(GameState.HOPPING);
+		waitFor(http, 3);
+		assertEquals(3, http.requests.size());
+		assertTrue(http.requests.get(2).body.contains("\"rsn\":\"Alt\""));
+	}
+
+	@Test
+	public void aLeaguesOrDeadmanWorldSendsNothing() throws Exception
+	{
+		FakeHttp http = new FakeHttp();
+		http.reply(200, COMP, "public, max-age=300");
+		Game p = new Game(api(http));
+		p.main = false;
+		p.login();
+		p.state(GameState.HOPPING);     // a hop off a Leagues world: its hiscores aren't the main game's
+		waitFor(http, 1);
+		assertEquals(0, http.requests.size());
+
+		p.state(GameState.LOADING, GameState.LOGGED_IN);
+		p.onGameTick(new GameTick());
+		p.onGameTick(new GameTick());
+		p.main = true;     // the Leagues world noted nobody, so this logout has no account to send
+		p.state(GameState.LOGIN_SCREEN);
+		waitFor(http, 1);
+		assertEquals(0, http.requests.size());
+	}
+
+	@Test
+	public void aNoticeWithNoCopyWhileAFetchIsOutWaitsForThatAnswer() throws Exception
+	{
+		FakeHttp http = new FakeHttp();
+		http.reply(200, COMP, "public, max-age=300");
+		http.reply(200, "{\"ok\":true}", null);
+		DrmApiClient api = api(http);
+		Game p = new Game(api);
+		p.login();
+		http.hold();
+		p.liveKc(new PbParser.KillCount("Vorkath", 301), "Lomaru", "dig", 1);     // its competition GET is out
+		waitFor(http, 1);
+		p.state(GameState.LOGIN_SCREEN);     // no copy yet and a fetch out: held, not dropped
+		assertEquals(1, http.requests.size());
+		http.release();
+		waitFor(http, 2);
+		assertEquals("the GET, then the held notice (the kill belonged to the old session)", 2, http.requests.size());
+		assertTrue(http.requests.get(1).request.url().toString().endsWith("/plugin/logout"));
+
+		p.competitionLanded(new ApiResult<>(ApiResult.Status.OK,
+			new Gson().fromJson(COMP, CompetitionResponse.class), Instant.now(), null));
+		waitFor(http, 3);
+		assertEquals("settled once", 2, http.requests.size());
+	}
+
+	@Test
+	public void mainGameWorldsAreTheOnesWithoutASeparateHiscore()
+	{
+		assertTrue(DreamChasersClanPlugin.mainGame(null));
+		assertTrue(DreamChasersClanPlugin.mainGame(EnumSet.noneOf(WorldType.class)));
+		assertTrue(DreamChasersClanPlugin.mainGame(EnumSet.of(WorldType.MEMBERS, WorldType.PVP, WorldType.SKILL_TOTAL)));
+		assertFalse(DreamChasersClanPlugin.mainGame(EnumSet.of(WorldType.MEMBERS, WorldType.SEASONAL)));
+		assertFalse(DreamChasersClanPlugin.mainGame(EnumSet.of(WorldType.DEADMAN)));
+		assertFalse(DreamChasersClanPlugin.mainGame(EnumSet.of(WorldType.FRESH_START_WORLD)));
+		assertFalse(DreamChasersClanPlugin.mainGame(EnumSet.of(WorldType.TOURNAMENT_WORLD)));
+		assertFalse(DreamChasersClanPlugin.mainGame(EnumSet.of(WorldType.BETA_WORLD)));
 	}
 
 	@Test

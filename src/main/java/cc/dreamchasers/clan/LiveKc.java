@@ -37,20 +37,37 @@ import java.util.function.Consumer;
  * next kill's check, or the panel's own fetch. Only a real answer that leaves
  * the boss out drops it.
  *
- * <p>Budget: at most one POST per kill of a boss in a running clan
- * competition (the site caps the route at 60 posts per 10 minutes per member),
- * plus the {@code /competition} GET the panel already makes, served from the
- * client's cache (its max-age, at least 60 s): at most one GET a minute while
- * killing, usually one per 5 minutes, and none while not killing.
+ * <p>Budget, per client:
+ * <ul>
+ * <li>{@code POST /plugin/kc}: at most one per kill of a boss in a running
+ * clan competition, never retried on a timer (the site caps the route at 60
+ * posts per 10 minutes per member).</li>
+ * <li>{@code POST /plugin/logout}: at most one per real logout or world hop,
+ * never retried, only while the competition copy lists a boss, only from a
+ * main-game world, and at most one per account per
+ * {@link #NOTICE_GAP_SECONDS} seconds, so hop-heavy play sends at most about
+ * 30 an hour. The site turns them into at most one Wise Old Man update per
+ * account per 10 minutes.</li>
+ * <li>{@code GET /competition}: the copy the panel already uses, kept for its
+ * max-age but at least 60 s (the site sends 30 s, so in practice 60 s). Kills
+ * and logouts share it: at most one GET a minute from both together, and none
+ * while the player neither kills a competition boss nor logs out nor hops.
+ * So a logout or hop more than a minute after the last fetch usually costs one
+ * GET and one POST.</li>
+ * </ul>
  *
- * <p>A real logout or a world hop sends one {@code POST /plugin/logout}
- * (when the competition copy lists any boss), so the site can ask Wise Old
- * Man for the hiscores the logout just moved: see {@link Account}.
+ * <p>A real logout or a world hop sends the logout notice so the site can ask
+ * Wise Old Man for the hiscores the logout just moved: see {@link Account}.
+ * When there is no copy yet and another {@code /competition} fetch is out,
+ * the notice is held and settled once by that fetch's answer, never looped.
  *
  * <p>Thread safe: kills come in on the client thread, answers on OkHttp's.
  */
 final class LiveKc
 {
+	/** The shortest gap between two logout notices for one account; well under the site's 10-minute debounce. */
+	static final long NOTICE_GAP_SECONDS = 120;
+
 	/**
 	 * Who was logged in, read on the client thread while the game still has
 	 * the player: by the time it says LOGIN_SCREEN or HOPPING the name may be
